@@ -1,6 +1,11 @@
+const glfw = @import("libs/mach-glfw/build.zig");
 const std = @import("std");
 
-pub fn build(b: *std.build.Builder) void {
+const ChildProcess = std.ChildProcess;
+
+const assert = std.debug.assert;
+
+pub fn build(b: *std.build.Builder) !void {
     // Standard target options allows the person running `zig build` to choose
     // what target to build for. Here we do not override the defaults, which
     // means any target is allowed, and the default is native. Other options
@@ -12,6 +17,8 @@ pub fn build(b: *std.build.Builder) void {
     const mode = b.standardReleaseOptions();
 
     const exe = b.addExecutable("workstation", "src/main.zig");
+    exe.addPackage(glfw.pkg);
+    glfw.link(b, exe, .{});
     exe.setTarget(target);
     exe.setBuildMode(mode);
     exe.install();
