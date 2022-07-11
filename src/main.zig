@@ -10,6 +10,9 @@ const impl_gl3 = @import("imgui_impl_opengl3");
 const glfw = @import("glfw");
 const gl = @import("gl");
 
+const assert = std.debug.assert;
+const Workstation = @import("Workstation.zig");
+
 const is_darwin = builtin.os.tag.isDarwin();
 
 fn glfw_error_callback(err: c_int, description: ?[*:0]const u8) callconv(.C) void {
@@ -79,10 +82,12 @@ pub fn main() !void {
 
     // Our state
     var show_demo_window = true;
-    var show_another_window = false;
     var clear_color = imgui.Vec4{ .x = 0.45, .y = 0.55, .z = 0.60, .w = 1.00 };
-    var slider_value: f32 = 0;
-    var counter: i32 = 0;
+
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer assert(!gpa.deinit());
+    var app = Workstation.init(gpa.allocator());
+    defer app.deinit();
 
     // Main loop
     while (glfw.glfwWindowShouldClose(window) == 0) {
@@ -102,34 +107,8 @@ pub fn main() !void {
         if (show_demo_window)
             imgui.ShowDemoWindowExt(&show_demo_window);
 
-        // 2. Show a simple window that we create ourselves. We use a Begin/End pair to created a named window.
-        {
-            _ = imgui.Begin("Hello, world!"); // Create a window called "Hello, world!" and append into it.
-
-            imgui.Text("This is some useful text."); // Display some text (you can use a format strings too)
-            _ = imgui.Checkbox("Demo Window", &show_demo_window); // Edit bools storing our window open/close state
-            _ = imgui.Checkbox("Another Window", &show_another_window);
-
-            _ = imgui.SliderFloat("float", &slider_value, 0.0, 1.0); // Edit 1 float using a slider from 0.0 to 1.0
-            _ = imgui.ColorEdit3("clear color", @ptrCast(*[3]f32, &clear_color)); // Edit 3 floats representing a color
-
-            if (imgui.Button("Button")) // Buttons return true when clicked (most widgets return true when edited/activated)
-                counter += 1;
-            imgui.SameLine();
-            imgui.Text("counter = %d", counter);
-
-            imgui.Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0 / imgui.GetIO().Framerate, imgui.GetIO().Framerate);
-            imgui.End();
-        }
-
-        // 3. Show another simple window.
-        if (show_another_window) {
-            _ = imgui.BeginExt("Another Window", &show_another_window, .{}); // Pass a pointer to our bool variable (the window will have a closing button that will clear the bool when clicked)
-            imgui.Text("Hello from another window!");
-            if (imgui.Button("Close Me"))
-                show_another_window = false;
-            imgui.End();
-        }
+        try app.processBackgroundWork();
+        try app.render();
 
         // Rendering
         imgui.Render();
