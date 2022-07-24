@@ -4,6 +4,7 @@
 
 const std = @import("std");
 const builtin = @import("builtin");
+const gui = @import("gui.zig");
 const imgui = @import("imgui");
 const impl_glfw = @import("imgui_impl_glfw");
 const impl_gl3 = @import("imgui_impl_opengl3");
@@ -53,7 +54,8 @@ pub fn main() !void {
     // Setup Dear ImGui context
     imgui.CHECKVERSION();
     _ = imgui.CreateContext();
-    //const io = imgui.GetIO();
+
+    // const io = imgui.GetIO();
     //io.ConfigFlags |= imgui.ConfigFlags.NavEnableKeyboard;     // Enable Keyboard Controls
     //io.ConfigFlags |= imgui.ConfigFlags.NavEnableGamepad;      // Enable Gamepad Controls
 
@@ -86,8 +88,12 @@ pub fn main() !void {
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer assert(!gpa.deinit());
-    var app = Workstation.init(gpa.allocator());
+    const allocator = gpa.allocator();
+    var app = Workstation.init(allocator);
     defer app.deinit();
+
+    try gui.initTmpAllocator(allocator);
+    defer gui.deinitTmpAllocator(allocator);
 
     // Main loop
     while (glfw.glfwWindowShouldClose(window) == 0) {
