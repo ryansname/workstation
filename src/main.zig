@@ -55,7 +55,7 @@ pub fn main() !void {
     imgui.CHECKVERSION();
     _ = imgui.CreateContext();
 
-    // const io = imgui.GetIO();
+    const io = imgui.GetIO();
     //io.ConfigFlags |= imgui.ConfigFlags.NavEnableKeyboard;     // Enable Keyboard Controls
     //io.ConfigFlags |= imgui.ConfigFlags.NavEnableGamepad;      // Enable Gamepad Controls
 
@@ -74,7 +74,8 @@ pub fn main() !void {
     // - The fonts will be rasterized at a given size (w/ oversampling) and stored into a texture when calling ImFontAtlas::Build()/GetTexDataAsXXXX(), which ImGui_ImplXXXX_NewFrame below will call.
     // - Read 'docs/FONTS.txt' for more instructions and details.
     // - Remember that in C/C++ if you want to include a backslash \ in a string literal you need to write a double backslash \\ !
-    //io.Fonts.AddFontDefault();
+    assert(io.Fonts.?.AddFontFromFileTTF("fonts/Hack-Regular.ttf", 13.0) != null);
+    _ = io.Fonts.?.AddFontDefault();
     //io.Fonts.AddFontFromFileTTF("../../misc/fonts/Roboto-Medium.ttf", 16.0);
     //io.Fonts.AddFontFromFileTTF("../../misc/fonts/Cousine-Regular.ttf", 15.0);
     //io.Fonts.AddFontFromFileTTF("../../misc/fonts/DroidSans.ttf", 16.0);
