@@ -1,3 +1,4 @@
+const builtin = @import("builtin");
 const fs = std.fs;
 const heap = std.heap;
 const log = std.log;
@@ -22,10 +23,20 @@ commit_message: ?[]u8 = null,
 
 status: ?[]u8 = null,
 
-pub fn init(alloc: Allocator) Workstation {
-    return .{
+pub fn init(alloc: Allocator) !*Workstation {
+    var app = try alloc.create(Workstation);
+    errdefer alloc.destroy(app);
+    app.* = Workstation{
         .root_allocator = alloc,
     };
+
+    if (app.status == null) {
+        app.work.appendAssumeCapacity(.{ .get_git_status = .{ .request = {}, .response = &app.status } });
+    }
+    if (app.logs == null) {
+        app.work.appendAssumeCapacity(.{ .list_git_log = .{ .request = {}, .response = &app.logs } });
+    }
+    return app;
 }
 
 pub fn deinit(app: *Workstation) void {
@@ -52,18 +63,12 @@ const Work = union(enum) {
 };
 
 pub fn processBackgroundWork(app: *Workstation) !void {
-    if (app.status == null) {
-        app.work.appendAssumeCapacity(.{ .get_git_status = .{ .request = {}, .response = &app.status } });
-    }
-    if (app.logs == null) {
-        app.work.appendAssumeCapacity(.{ .list_git_log = .{ .request = {}, .response = &app.logs } });
-    }
     if (app.work.popOrNull()) |*work| switch (work.*) {
         .get_git_status => |*get_git_status| {
             get_git_status.response.* = try exec(app.root_allocator, &.{ "git", "status", "--porcelain" }, .{});
         },
         .list_git_log => |*list_git_log| {
-            var raw_log = try exec(app.root_allocator, &.{ "git", "name-rev", "--all" }, .{});
+            var raw_log = try exec(app.root_allocator, &.{ "git", "rev-list", "--all" }, .{});
             defer app.root_allocator.free(raw_log);
 
             const line_count = mem.count(u8, raw_log, "\n");
@@ -155,5 +160,10 @@ fn exec(alloc: Allocator, cmd: []const []const u8, args: struct {
         log.warn("{s} (errer): {s}", .{ cmd[0], exec_result.stderr });
     }
 
-    return exec_result.stdout;
+    if (builtin.mode == .Debug) {
+        defer alloc.free(exec_result.stdout);
+        return alloc.dupeZ(u8, exec_result.stdout);
+    } else {
+        return exec_result.stdout;
+    }
 }

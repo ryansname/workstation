@@ -89,7 +89,7 @@ pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer assert(!gpa.deinit());
     const allocator = gpa.allocator();
-    var app = Workstation.init(allocator);
+    var app = try Workstation.init(allocator);
     defer app.deinit();
 
     try gui.initTmpAllocator(allocator);
