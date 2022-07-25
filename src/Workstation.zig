@@ -47,6 +47,10 @@ pub fn deinit(app: *Workstation) void {
     if (app.commit_message) |commit_message| app.root_allocator.free(commit_message);
 
     if (app.status) |status| app.root_allocator.free(status);
+
+    const alloc = app.root_allocator;
+    app.* = undefined;
+    alloc.destroy(app);
 }
 
 fn WorkType(comptime req: type, comptime res: type) type {
