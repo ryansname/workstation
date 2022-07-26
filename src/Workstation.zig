@@ -13,7 +13,6 @@ const assert = std.debug.assert;
 const Workstation = @This();
 
 root_allocator: Allocator,
-commit_view: CommitView = .{},
 
 work: std.BoundedArray(Work, 32) = .{},
 
@@ -103,7 +102,8 @@ pub fn processBackgroundWork(app: *Workstation) !void {
 }
 
 pub fn render(app: *Workstation) !void {
-    const visible = gui.BeginExt("Commits", &app.commit_view.open, .{});
+    var commit_view_open = true;
+    const visible = gui.BeginExt("Commits", &commit_view_open, .{});
     defer gui.End();
 
     if (visible) {
@@ -124,7 +124,6 @@ pub fn render(app: *Workstation) !void {
                 }
             }
         }
-        app.commit_view.render();
     }
 
     if (app.selected_commit) |commit| {
@@ -134,17 +133,6 @@ pub fn render(app: *Workstation) !void {
         gui.Text2(app.commit_message orelse "");
     }
 }
-
-const CommitView = struct {
-    open: bool = true,
-    commits: [50]struct {
-        hash: [64]u8,
-    } = .{undefined} ** 50,
-
-    fn render(commit_view: *CommitView) void {
-        _ = commit_view;
-    }
-};
 
 fn exec(alloc: Allocator, cmd: []const []const u8, args: struct {
     dir: ?fs.Dir = null,
