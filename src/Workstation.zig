@@ -14,6 +14,8 @@ const Workstation = @This();
 
 root_allocator: Allocator,
 
+exit_requested: bool = false,
+
 work: std.BoundedArray(Work, 32) = .{},
 
 logs: ?[][:0]u8 = null,
@@ -126,6 +128,11 @@ pub fn processBackgroundWork(app: *Workstation) !void {
 }
 
 pub fn render(app: *Workstation) !void {
+    if (gui.IsKeyPressed(.Q)) {
+        app.exit_requested = true;
+        return;
+    }
+
     var commit_view_open = true;
     const visible = gui.BeginExt("Commits", &commit_view_open, .{});
     defer gui.End();

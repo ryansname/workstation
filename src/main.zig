@@ -97,7 +97,7 @@ pub fn main() !void {
     defer gui.deinitTmpAllocator(allocator);
 
     // Main loop
-    while (glfw.glfwWindowShouldClose(window) == 0) {
+    while (glfw.glfwWindowShouldClose(window) == 0 and !app.exit_requested) {
         // Poll and handle events (inputs, window resize, etc.)
         // You can read the io.WantCaptureMouse, io.WantCaptureKeyboard flags to tell if dear imgui wants to use your inputs.
         // - When io.WantCaptureMouse is true, do not dispatch mouse input data to your main application.
