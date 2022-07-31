@@ -20,6 +20,8 @@ logs: ?[][:0]u8 = null,
 selected_commit: ?[]const u8 = null,
 commit_message: ?[]u8 = null,
 
+branches: ?[][]u8 = null,
+
 status: ?[]u8 = null,
 
 pub fn init(alloc: Allocator) !*Workstation {
@@ -29,12 +31,9 @@ pub fn init(alloc: Allocator) !*Workstation {
         .root_allocator = alloc,
     };
 
-    if (app.status == null) {
-        app.work.appendAssumeCapacity(.{ .get_git_status = .{ .request = {}, .response = &app.status } });
-    }
-    if (app.logs == null) {
-        app.work.appendAssumeCapacity(.{ .list_git_log = .{ .request = {}, .response = &app.logs } });
-    }
+    app.work.appendAssumeCapacity(.{ .get_git_status = .{ .request = {}, .response = &app.status } });
+    app.work.appendAssumeCapacity(.{ .list_git_log = .{ .request = {}, .response = &app.logs } });
+    app.work.appendAssumeCapacity(.{ .list_git_branches = .{ .request = {}, .response = &app.branches } });
     return app;
 }
 
@@ -46,6 +45,11 @@ pub fn deinit(app: *Workstation) void {
     if (app.commit_message) |commit_message| app.root_allocator.free(commit_message);
 
     if (app.status) |status| app.root_allocator.free(status);
+
+    if (app.branches) |branches| {
+        for (branches) |branch| app.root_allocator.free(branch);
+        app.root_allocator.free(branches);
+    }
 
     const alloc = app.root_allocator;
     app.* = undefined;
@@ -63,6 +67,7 @@ const Work = union(enum) {
     get_git_status: WorkType(void, ?[]u8),
     list_git_log: WorkType(void, ?[][:0]u8),
     get_git_commit: WorkType([]u8, ?[]u8),
+    list_git_branches: WorkType(void, ?[][]u8),
 };
 
 pub fn processBackgroundWork(app: *Workstation) !void {
@@ -98,6 +103,25 @@ pub fn processBackgroundWork(app: *Workstation) !void {
             const raw_message = try exec(app.root_allocator, &.{ "git", "rev-list", "--format=%B", "--max-count=1", hash }, .{});
             get_git_commit.response.* = raw_message;
         },
+        .list_git_branches => |*list_git_branches| {
+            var raw_branches = try exec(app.root_allocator, &.{ "git", "for-each-ref", "refs/heads/" }, .{});
+            defer app.root_allocator.free(raw_branches);
+
+            const line_count = mem.count(u8, raw_branches, "\n");
+            var lines = try ArrayList([]u8).initCapacity(app.root_allocator, line_count);
+            errdefer {
+                for (lines.items) |item| app.root_allocator.free(item);
+                lines.deinit(app.root_allocator);
+            }
+
+            var branch_iter = mem.tokenize(u8, raw_branches, "\n");
+            while (branch_iter.next()) |branch| {
+                lines.appendAssumeCapacity(try app.root_allocator.dupe(u8, branch));
+            }
+
+            const slice = lines.toOwnedSlice(app.root_allocator);
+            list_git_branches.response.* = slice;
+        },
     };
 }
 
@@ -131,6 +155,14 @@ pub fn render(app: *Workstation) !void {
         defer gui.End();
 
         gui.Text2(app.commit_message orelse "");
+    }
+
+    gui.End();
+    const branches_visible = gui.BeginExt("Branches", &commit_view_open, .{});
+    if (branches_visible and app.branches != null) {
+        for (app.branches.?) |branch| {
+            gui.Text2(branch);
+        }
     }
 }
 
