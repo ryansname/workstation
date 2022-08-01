@@ -6,10 +6,10 @@ const std = @import("std");
 const builtin = @import("builtin");
 const gui = @import("gui.zig");
 const imgui = @import("imgui");
-const impl_glfw = @import("imgui_impl_glfw");
-const impl_gl3 = @import("imgui_impl_opengl3");
-const glfw = @import("glfw");
-const gl = @import("gl");
+const impl_glfw = @import("imgui_impl_glfw.zig");
+const impl_gl3 = @import("imgui_impl_opengl3.zig");
+const glfw = @import("include/glfw.zig");
+const gl = @import("include/gl.zig");
 
 const assert = std.debug.assert;
 const Workstation = @import("Workstation.zig");

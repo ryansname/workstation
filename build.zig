@@ -47,14 +47,6 @@ pub fn build(b: *std.build.Builder) !void {
 fn addDeps(exe: *std.build.LibExeObjStep, target: std.zig.CrossTarget) void {
     imgui.link(exe);
 
-    const impl_glfw = .{ .name = "imgui_impl_glfw", .source = std.build.FileSource.relative("libs/Zig-ImGui/examples/imgui_impl_glfw.zig"), .dependencies = &.{imgui.pkg} };
-    const impl_opengl = .{ .name = "imgui_impl_opengl3", .source = std.build.FileSource.relative("libs/Zig-ImGui/examples/imgui_impl_opengl3.zig"), .dependencies = &.{imgui.pkg} };
-    exe.addPackage(impl_glfw);
-    exe.addPackage(impl_opengl);
-    exe.addPackagePath("gl", "libs/Zig-ImGui/examples/include/gl.zig");
-    exe.addPackagePath("glfw", "libs/Zig-ImGui/examples/include/glfw.zig");
-    exe.addSystemIncludePath("libs/Zig-ImGui/examples/include/c_include/");
-
     linkGlad(exe, target);
     linkGlfw(exe, target);
 
@@ -64,9 +56,8 @@ fn addDeps(exe: *std.build.LibExeObjStep, target: std.zig.CrossTarget) void {
 
 fn linkGlad(exe: *std.build.LibExeObjStep, target: std.zig.CrossTarget) void {
     _ = target;
-    exe.addIncludeDir("libs/Zig-ImGui/examples/include/c_include");
-    exe.addCSourceFile("libs/Zig-ImGui/examples/c_src/glad.c", &[_][]const u8{"-std=c99"});
-    //exe.linkSystemLibrary("opengl");
+    exe.addIncludeDir("src/libs/glad/");
+    exe.addCSourceFiles(&[_][]const u8{"src/libs/glad/glad.c"}, &[_][]const u8{"-std=c99"});
 }
 
 fn linkGlfw(exe: *std.build.LibExeObjStep, target: std.zig.CrossTarget) void {
