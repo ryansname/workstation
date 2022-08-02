@@ -74,8 +74,16 @@ pub fn main() !void {
     // - The fonts will be rasterized at a given size (w/ oversampling) and stored into a texture when calling ImFontAtlas::Build()/GetTexDataAsXXXX(), which ImGui_ImplXXXX_NewFrame below will call.
     // - Read 'docs/FONTS.txt' for more instructions and details.
     // - Remember that in C/C++ if you want to include a backslash \ in a string literal you need to write a double backslash \\ !
-    assert(io.Fonts.?.AddFontFromFileTTF("fonts/Hack-Regular.ttf", 13.0) != null);
+
+    var font_config: gui.FontConfig = undefined;
+    gui.FontConfig.init_ImFontConfig(&font_config);
+    defer gui.FontConfig.deinit(&font_config);
+    font_config.FontDataOwnedByAtlas = false; // In static memory, so it cannot be freed
+
+    const font_data = @embedFile("../fonts/Hack-Regular.ttf");
+    assert(io.Fonts.?.AddFontFromMemoryTTFExt(@intToPtr(*u8, @ptrToInt(font_data)), font_data.len, 13.0, &font_config, null) != null);
     _ = io.Fonts.?.AddFontDefault();
+
     //io.Fonts.AddFontFromFileTTF("../../misc/fonts/Roboto-Medium.ttf", 16.0);
     //io.Fonts.AddFontFromFileTTF("../../misc/fonts/Cousine-Regular.ttf", 15.0);
     //io.Fonts.AddFontFromFileTTF("../../misc/fonts/DroidSans.ttf", 16.0);
