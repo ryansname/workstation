@@ -6,10 +6,14 @@ const imgui = @import("imgui");
 
 pub usingnamespace imgui;
 
-pub fn Text2(text: anytype) void {
+pub inline fn Text2(text: anytype) void {
     const text_start: [*]const u8 = text.ptr;
     const text_end: [*]const u8 = text.ptr + text.len;
     imgui.TextUnformattedExt(text_start, text_end);
+}
+
+pub inline fn Selectable2(label: []const u8, selected: bool, flags: imgui.SelectableFlags) bool {
+    return imgui.Selectable_BoolExt(dupeZ(label), selected, flags, .{ .x = 0, .y = 0 });
 }
 
 var tmp_allocator_instance: ScratchAllocator = undefined;

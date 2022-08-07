@@ -103,6 +103,9 @@ pub fn processBackgroundWork(app: *Workstation) !void {
         .get_git_commit => |*get_git_commit| {
             const hash = get_git_commit.request;
             const raw_message = try exec(app.root_allocator, &.{ "git", "rev-list", "--format=%B", "--max-count=1", hash }, .{});
+            if (get_git_commit.response.*) |msg| {
+                app.root_allocator.free(msg);
+            }
             get_git_commit.response.* = raw_message;
         },
         .list_git_branches => |*list_git_branches| {
@@ -141,19 +144,9 @@ pub fn render(app: *Workstation) !void {
         if (app.status) |*status| {
             gui.TextUnformattedExt(status.ptr, status.ptr + status.len);
         }
+
         if (app.logs) |logs| {
-            for (logs) |line| {
-                const is_selected = if (app.selected_commit) |selected_commit| selected_commit.ptr == line.ptr else false;
-                const selected = gui.Selectable_BoolExt(line, is_selected, .{}, .{ .x = 0, .y = 0 });
-                if (selected) {
-                    if (app.commit_message) |msg| {
-                        app.root_allocator.free(msg);
-                        app.commit_message = null;
-                    }
-                    app.selected_commit = line;
-                    try app.work.append(.{ .get_git_commit = .{ .request = mem.sliceTo(line, ' '), .response = &app.commit_message } });
-                }
-            }
+            try app.renderLogs(logs);
         }
     }
 
@@ -168,7 +161,24 @@ pub fn render(app: *Workstation) !void {
     const branches_visible = gui.BeginExt("Branches", &commit_view_open, .{});
     if (branches_visible and app.branches != null) {
         for (app.branches.?) |branch| {
-            gui.Text2(branch);
+            const branch_head = mem.sliceTo(branch, ' ');
+            const is_selected = if (app.selected_commit) |selected_commit| mem.eql(u8, selected_commit, branch_head) else false;
+            const selected = gui.Selectable2(branch, is_selected, .{});
+            if (selected) {
+                app.selected_commit = branch_head;
+                try app.work.append(.{ .get_git_commit = .{ .request = branch_head, .response = &app.commit_message } });
+            }
+        }
+    }
+}
+
+fn renderLogs(app: *Workstation, logs: []const [:0]u8) !void {
+    for (logs) |line| {
+        const is_selected = if (app.selected_commit) |selected_commit| mem.eql(u8, selected_commit, line) else false;
+        const selected = gui.Selectable_BoolExt(line, is_selected, .{}, .{ .x = 0, .y = 0 });
+        if (selected) {
+            app.selected_commit = line;
+            try app.work.append(.{ .get_git_commit = .{ .request = mem.sliceTo(line, ' '), .response = &app.commit_message } });
         }
     }
 }
