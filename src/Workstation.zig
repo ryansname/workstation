@@ -185,11 +185,12 @@ fn renderLogs(app: *Workstation, logs: []const [:0]u8) !void {
 
 fn exec(alloc: Allocator, cmd: []const []const u8, args: struct {
     dir: ?fs.Dir = null,
-}) ![]u8 {
+}) ![:0]u8 {
     var exec_result = try std.ChildProcess.exec(.{
         .allocator = alloc,
         .argv = cmd,
         .cwd_dir = args.dir,
+        .max_output_bytes = 50 * 1024 * 1025,
     });
     errdefer alloc.free(exec_result.stdout);
     defer alloc.free(exec_result.stderr);
