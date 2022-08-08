@@ -56,7 +56,7 @@ pub fn main() !void {
     _ = imgui.CreateContext();
 
     const io = imgui.GetIO();
-    //io.ConfigFlags |= imgui.ConfigFlags.NavEnableKeyboard;     // Enable Keyboard Controls
+    io.ConfigFlags.NavEnableKeyboard = true; // Enable Keyboard Controls
     //io.ConfigFlags |= imgui.ConfigFlags.NavEnableGamepad;      // Enable Gamepad Controls
 
     // Setup Dear ImGui style
