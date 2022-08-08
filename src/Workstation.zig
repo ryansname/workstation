@@ -22,6 +22,8 @@ logs: ?[][:0]u8 = null,
 selected_commit: ?[]const u8 = null,
 commit_message: ?[]u8 = null,
 
+selected_branch: ?[]const u8 = null,
+
 branches: ?[][]u8 = null,
 
 status: ?[]u8 = null,
@@ -160,12 +162,17 @@ pub fn render(app: *Workstation) !void {
     gui.End();
     const branches_visible = gui.BeginExt("Branches", &commit_view_open, .{});
     if (branches_visible and app.branches != null) {
+        if (app.selected_branch) |branch| {
+            gui.Text2(branch);
+        }
         for (app.branches.?) |branch| {
             const branch_head = mem.sliceTo(branch, ' ');
             const is_selected = if (app.selected_commit) |selected_commit| mem.eql(u8, selected_commit, branch_head) else false;
             const selected = gui.Selectable2(branch, is_selected, .{});
             if (selected) {
                 app.selected_commit = branch_head;
+                const tab_index = mem.indexOfScalar(u8, branch, '\t');
+                if (tab_index) |i| app.selected_branch = branch[i + 1 ..];
                 try app.work.append(.{ .get_git_commit = .{ .request = branch_head, .response = &app.commit_message } });
             }
         }

@@ -12,6 +12,11 @@ pub inline fn Text2(text: anytype) void {
     imgui.TextUnformattedExt(text_start, text_end);
 }
 
+pub inline fn TextFmt(comptime format: []const u8, args: anytype) void {
+    const string = printZ(format, args);
+    Text2(string);
+}
+
 pub inline fn Selectable2(label: []const u8, selected: bool, flags: imgui.SelectableFlags) bool {
     return imgui.Selectable_BoolExt(dupeZ(label), selected, flags, .{ .x = 0, .y = 0 });
 }
