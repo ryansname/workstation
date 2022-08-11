@@ -138,10 +138,32 @@ pub fn render(app: *Workstation) !void {
         return;
     }
 
-    var commit_view_open = true;
-    const visible = gui.BeginExt("Commits", &commit_view_open, .{});
+    var view_open = true;
+    var visible = gui.BeginExt("Branches", &view_open, .{});
     defer gui.End();
+    if (!visible) return;
 
+    if (app.branches != null) {
+        if (gui.CollapsingHeader_BoolPtr("Branches", null)) {
+            if (app.selected_branch) |branch| {
+                gui.Text2(branch);
+            }
+            for (app.branches.?) |branch| {
+                const branch_head = mem.sliceTo(branch, ' ');
+                const is_selected = if (app.selected_commit) |selected_commit| mem.eql(u8, selected_commit, branch_head) else false;
+                const selected = gui.Selectable2(branch, is_selected, .{});
+                if (selected) {
+                    app.selected_commit = branch_head;
+                    const tab_index = mem.indexOfScalar(u8, branch, '\t');
+                    if (tab_index) |i| app.selected_branch = branch[i + 1 ..];
+                    try app.work.append(.{ .get_git_commit = .{ .request = branch_head, .response = &app.commit_message } });
+                }
+            }
+        }
+    }
+
+    var commits_visible = true;
+    visible = gui.CollapsingHeader_BoolPtr("Commits", &commits_visible);
     if (visible) {
         if (app.status) |*status| {
             gui.TextUnformattedExt(status.ptr, status.ptr + status.len);
@@ -152,29 +174,11 @@ pub fn render(app: *Workstation) !void {
         }
     }
 
-    if (app.selected_commit) |commit| {
-        _ = gui.Begin(gui.printZ("{s}###commit", .{commit}));
-        defer gui.End();
-
-        gui.Text2(app.commit_message orelse "");
-    }
-
-    gui.End();
-    const branches_visible = gui.BeginExt("Branches", &commit_view_open, .{});
-    if (branches_visible and app.branches != null) {
-        if (app.selected_branch) |branch| {
-            gui.Text2(branch);
-        }
-        for (app.branches.?) |branch| {
-            const branch_head = mem.sliceTo(branch, ' ');
-            const is_selected = if (app.selected_commit) |selected_commit| mem.eql(u8, selected_commit, branch_head) else false;
-            const selected = gui.Selectable2(branch, is_selected, .{});
-            if (selected) {
-                app.selected_commit = branch_head;
-                const tab_index = mem.indexOfScalar(u8, branch, '\t');
-                if (tab_index) |i| app.selected_branch = branch[i + 1 ..];
-                try app.work.append(.{ .get_git_commit = .{ .request = branch_head, .response = &app.commit_message } });
-            }
+    var commit_visible = true;
+    visible = gui.CollapsingHeader_BoolPtr("commit", &commit_visible);
+    if (visible) {
+        if (app.selected_commit) |_| {
+            gui.Text2(app.commit_message orelse "");
         }
     }
 }
