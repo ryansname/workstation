@@ -6,6 +6,7 @@ const mem = std.mem;
 const std = @import("std");
 const gui = @import("gui.zig");
 
+const Arena = std.heap.ArenaAllocator;
 const ArrayList = std.ArrayListUnmanaged;
 const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
@@ -18,13 +19,9 @@ exit_requested: bool = false,
 
 work: std.BoundedArray(Work, 32) = .{},
 
-logs: ?[][:0]u8 = null,
-selected_commit: ?[]const u8 = null,
 commit_message: ?[]u8 = null,
 
-selected_branch: ?[]const u8 = null,
-
-branches: ?[][]u8 = null,
+default_display: Display,
 
 status: ?[]u8 = null,
 
@@ -33,24 +30,19 @@ pub fn init(alloc: Allocator) !*Workstation {
     errdefer alloc.destroy(app);
     app.* = Workstation{
         .root_allocator = alloc,
+        .default_display = Display.init(alloc, .{ .branches = .{} }),
     };
-
     app.work.appendAssumeCapacity(.{ .get_git_status = .{ .request = {}, .response = &app.status } });
-    app.work.appendAssumeCapacity(.{ .list_git_log = .{ .request = {}, .response = &app.logs } });
-    app.work.appendAssumeCapacity(.{ .list_git_branches = .{ .request = {}, .response = &app.branches } });
+    app.work.appendAssumeCapacity(.{ .list_git_branches = .{ .request = {}, .response = &app.default_display.data.branches.branches_list } });
     return app;
 }
 
 pub fn deinit(app: *Workstation) void {
-    if (app.logs) |logs| {
-        for (logs) |log_line| app.root_allocator.free(log_line);
-        app.root_allocator.free(logs);
-    }
     if (app.commit_message) |commit_message| app.root_allocator.free(commit_message);
 
     if (app.status) |status| app.root_allocator.free(status);
 
-    if (app.branches) |branches| {
+    if (app.default_display.data.branches.branches_list) |branches| {
         for (branches) |branch| app.root_allocator.free(branch);
         app.root_allocator.free(branches);
     }
@@ -99,8 +91,6 @@ pub fn processBackgroundWork(app: *Workstation) !void {
             }
             const slice = linesZ.toOwnedSlice(app.root_allocator);
             list_git_log.response.* = slice;
-
-            app.selected_commit = null;
         },
         .get_git_commit => |*get_git_commit| {
             const hash = get_git_commit.request;
@@ -132,6 +122,75 @@ pub fn processBackgroundWork(app: *Workstation) !void {
     };
 }
 
+const Display = struct {
+    arena: Arena,
+    expanded: bool = true,
+    child: ?*Display = null,
+
+    data: union(enum) {
+        branches: struct {
+            branches_list: ?[][]u8 = null,
+            selected_branch_index: ?usize = null,
+        },
+        commits: struct {
+            logs: ?[][:0]u8 = null,
+            selected_commit_index: ?usize = null,
+        },
+    },
+
+    fn init(alloc: Allocator, data: anytype) Display {
+        return Display{
+            .arena = Arena.init(alloc),
+            .data = data,
+        };
+    }
+
+    fn render(this: *Display, app: *Workstation) Allocator.Error!void {
+        const alloc = this.arena.allocator();
+        if (gui.CollapsingHeader_BoolPtr(@tagName(this.data), &this.expanded)) {
+            switch (this.data) {
+                .branches => |*branches| {
+                    if (branches.branches_list == null) {
+                        gui.Text2(gui.printZ("Loading", .{}));
+                        return;
+                    }
+                    const branches_list = branches.branches_list.?;
+
+                    if (branches.selected_branch_index) |branch_index| {
+                        gui.Text2(branches_list[branch_index]);
+                    }
+                    for (branches_list) |branch, i| {
+                        const is_selected = branches.selected_branch_index == i;
+                        const selected = gui.Selectable2(branch, is_selected, .{});
+                        if (selected) {
+                            branches.selected_branch_index = i;
+                            var child = try alloc.create(Display);
+                            child.* = Display.init(alloc, .{ .commits = .{} });
+                            this.child = child;
+                            var commits = &child.data.commits;
+                            app.work.appendAssumeCapacity(.{ .list_git_log = .{ .request = {}, .response = &commits.logs } });
+                        }
+                    }
+                },
+                .commits => |*commits| {
+                    if (commits.logs) |logs| {
+                        for (logs) |line, i| {
+                            const is_selected = commits.selected_commit_index == i;
+                            const selected = gui.Selectable_BoolExt(line, is_selected, .{}, .{ .x = 0, .y = 0 });
+                            if (selected) {
+                                commits.selected_commit_index = i;
+                                // try app.work.append(.{ .get_git_commit = .{ .request = mem.sliceTo(line, ' '), .response = &app.commit_message } });
+                            }
+                        }
+                    }
+                    gui.Text2(gui.printZ("TODO", .{}));
+                },
+            }
+        }
+        if (this.child) |child| try child.render(app);
+    }
+};
+
 pub fn render(app: *Workstation) !void {
     if (gui.IsKeyPressed(.Q)) {
         app.exit_requested = true;
@@ -143,55 +202,7 @@ pub fn render(app: *Workstation) !void {
     defer gui.End();
     if (!visible) return;
 
-    if (app.branches != null) {
-        if (gui.CollapsingHeader_BoolPtr("Branches", null)) {
-            if (app.selected_branch) |branch| {
-                gui.Text2(branch);
-            }
-            for (app.branches.?) |branch| {
-                const branch_head = mem.sliceTo(branch, ' ');
-                const is_selected = if (app.selected_commit) |selected_commit| mem.eql(u8, selected_commit, branch_head) else false;
-                const selected = gui.Selectable2(branch, is_selected, .{});
-                if (selected) {
-                    app.selected_commit = branch_head;
-                    const tab_index = mem.indexOfScalar(u8, branch, '\t');
-                    if (tab_index) |i| app.selected_branch = branch[i + 1 ..];
-                    try app.work.append(.{ .get_git_commit = .{ .request = branch_head, .response = &app.commit_message } });
-                }
-            }
-        }
-    }
-
-    var commits_visible = true;
-    visible = gui.CollapsingHeader_BoolPtr("Commits", &commits_visible);
-    if (visible) {
-        if (app.status) |*status| {
-            gui.TextUnformattedExt(status.ptr, status.ptr + status.len);
-        }
-
-        if (app.logs) |logs| {
-            try app.renderLogs(logs);
-        }
-    }
-
-    var commit_visible = true;
-    visible = gui.CollapsingHeader_BoolPtr("commit", &commit_visible);
-    if (visible) {
-        if (app.selected_commit) |_| {
-            gui.Text2(app.commit_message orelse "");
-        }
-    }
-}
-
-fn renderLogs(app: *Workstation, logs: []const [:0]u8) !void {
-    for (logs) |line| {
-        const is_selected = if (app.selected_commit) |selected_commit| mem.eql(u8, selected_commit, line) else false;
-        const selected = gui.Selectable_BoolExt(line, is_selected, .{}, .{ .x = 0, .y = 0 });
-        if (selected) {
-            app.selected_commit = line;
-            try app.work.append(.{ .get_git_commit = .{ .request = mem.sliceTo(line, ' '), .response = &app.commit_message } });
-        }
-    }
+    try app.default_display.render(app);
 }
 
 fn exec(alloc: Allocator, cmd: []const []const u8, args: struct {
