@@ -32,8 +32,8 @@ pub fn init(alloc: Allocator) !*Workstation {
         .root_allocator = alloc,
         .default_display = Display.init(alloc, .{ .branches = .{} }),
     };
-    app.work.appendAssumeCapacity(.{ .get_git_status = .{ .request = {}, .response = &app.status } });
-    app.work.appendAssumeCapacity(.{ .list_git_branches = .{ .request = {}, .response = &app.default_display.data.branches.branches_list } });
+    app.work.appendAssumeCapacity(.{ .allocator = alloc, .work_type = .{ .get_git_status = .{ .request = {}, .response = &app.status } } });
+    app.work.appendAssumeCapacity(.{ .allocator = app.default_display.arena.allocator(), .work_type = .{ .list_git_branches = .{ .request = {}, .response = &app.default_display.data.branches.branches_list } } });
     return app;
 }
 
@@ -42,10 +42,7 @@ pub fn deinit(app: *Workstation) void {
 
     if (app.status) |status| app.root_allocator.free(status);
 
-    if (app.default_display.data.branches.branches_list) |branches| {
-        for (branches) |branch| app.root_allocator.free(branch);
-        app.root_allocator.free(branches);
-    }
+    app.default_display.deinit();
 
     const alloc = app.root_allocator;
     app.* = undefined;
@@ -59,67 +56,73 @@ fn WorkType(comptime req: type, comptime res: type) type {
     };
 }
 
-const Work = union(enum) {
-    get_git_status: WorkType(void, ?[]u8),
-    list_git_log: WorkType(void, ?[][:0]u8),
-    get_git_commit: WorkType([]u8, ?[]u8),
-    list_git_branches: WorkType(void, ?[][]u8),
+const Work = struct {
+    allocator: Allocator,
+    work_type: union(enum) {
+        get_git_status: WorkType(void, ?[]u8),
+        list_git_log: WorkType(void, ?[][:0]u8),
+        get_git_commit: WorkType([]u8, ?[]u8),
+        list_git_branches: WorkType(void, ?[][]u8),
+    },
 };
 
 pub fn processBackgroundWork(app: *Workstation) !void {
-    if (app.work.popOrNull()) |*work| switch (work.*) {
-        .get_git_status => |*get_git_status| {
-            get_git_status.response.* = try exec(app.root_allocator, &.{ "git", "status", "--porcelain" }, .{});
-        },
-        .list_git_log => |*list_git_log| {
-            var raw_log = try exec(app.root_allocator, &.{ "git", "rev-list", "--all" }, .{});
-            defer app.root_allocator.free(raw_log);
+    if (app.work.popOrNull()) |*work| {
+        const alloc = work.allocator;
+        switch (work.*.work_type) {
+            .get_git_status => |*get_git_status| {
+                get_git_status.response.* = try exec(alloc, &.{ "git", "status", "--porcelain" }, .{});
+            },
+            .list_git_log => |*list_git_log| {
+                var raw_log = try exec(alloc, &.{ "git", "rev-list", "--all" }, .{});
+                defer alloc.free(raw_log);
 
-            const line_count = mem.count(u8, raw_log, "\n");
-            var linesZ = try ArrayList([:0]u8).initCapacity(app.root_allocator, line_count);
-            errdefer {
-                for (linesZ.items) |item| app.root_allocator.free(item);
-                linesZ.deinit(app.root_allocator);
-            }
+                const line_count = mem.count(u8, raw_log, "\n");
+                var linesZ = try ArrayList([:0]u8).initCapacity(alloc, line_count);
+                errdefer {
+                    for (linesZ.items) |item| alloc.free(item);
+                    linesZ.deinit(alloc);
+                }
 
-            var log_iter = mem.tokenize(u8, raw_log, "\n");
-            while (log_iter.next()) |line| {
-                const lineZ = try app.root_allocator.dupeZ(u8, line);
-                errdefer app.root_allocator.free(lineZ);
+                var log_iter = mem.tokenize(u8, raw_log, "\n");
+                while (log_iter.next()) |line| {
+                    const lineZ = try alloc.dupeZ(u8, line);
+                    errdefer alloc.free(lineZ);
 
-                linesZ.appendAssumeCapacity(lineZ);
-            }
-            const slice = linesZ.toOwnedSlice(app.root_allocator);
-            list_git_log.response.* = slice;
-        },
-        .get_git_commit => |*get_git_commit| {
-            const hash = get_git_commit.request;
-            const raw_message = try exec(app.root_allocator, &.{ "git", "rev-list", "--format=%B", "--max-count=1", hash }, .{});
-            if (get_git_commit.response.*) |msg| {
-                app.root_allocator.free(msg);
-            }
-            get_git_commit.response.* = raw_message;
-        },
-        .list_git_branches => |*list_git_branches| {
-            var raw_branches = try exec(app.root_allocator, &.{ "git", "for-each-ref", "refs/heads/" }, .{});
-            defer app.root_allocator.free(raw_branches);
+                    linesZ.appendAssumeCapacity(lineZ);
+                }
+                const slice = linesZ.toOwnedSlice(alloc);
+                list_git_log.response.* = slice;
+            },
+            .get_git_commit => |*get_git_commit| {
+                const hash = get_git_commit.request;
+                const raw_message = try exec(alloc, &.{ "git", "rev-list", "--format=%B", "--max-count=1", hash }, .{});
+                if (get_git_commit.response.*) |msg| {
+                    alloc.free(msg);
+                }
+                get_git_commit.response.* = raw_message;
+            },
+            .list_git_branches => |*list_git_branches| {
+                var raw_branches = try exec(alloc, &.{ "git", "for-each-ref", "refs/heads/" }, .{});
+                defer alloc.free(raw_branches);
 
-            const line_count = mem.count(u8, raw_branches, "\n");
-            var lines = try ArrayList([]u8).initCapacity(app.root_allocator, line_count);
-            errdefer {
-                for (lines.items) |item| app.root_allocator.free(item);
-                lines.deinit(app.root_allocator);
-            }
+                const line_count = mem.count(u8, raw_branches, "\n");
+                var lines = try ArrayList([]u8).initCapacity(alloc, line_count);
+                errdefer {
+                    for (lines.items) |item| alloc.free(item);
+                    lines.deinit(alloc);
+                }
 
-            var branch_iter = mem.tokenize(u8, raw_branches, "\n");
-            while (branch_iter.next()) |branch| {
-                lines.appendAssumeCapacity(try app.root_allocator.dupe(u8, branch));
-            }
+                var branch_iter = mem.tokenize(u8, raw_branches, "\n");
+                while (branch_iter.next()) |branch| {
+                    lines.appendAssumeCapacity(try alloc.dupe(u8, branch));
+                }
 
-            const slice = lines.toOwnedSlice(app.root_allocator);
-            list_git_branches.response.* = slice;
-        },
-    };
+                const slice = lines.toOwnedSlice(alloc);
+                list_git_branches.response.* = slice;
+            },
+        }
+    }
 }
 
 const Display = struct {
@@ -145,9 +148,15 @@ const Display = struct {
         };
     }
 
+    fn deinit(self: Display) void {
+        self.arena.deinit();
+    }
+
     fn render(this: *Display, app: *Workstation) Allocator.Error!void {
         const alloc = this.arena.allocator();
-        if (gui.CollapsingHeader_BoolPtr(@tagName(this.data), &this.expanded)) {
+        gui.SetNextItemOpen(this.expanded);
+        this.expanded = gui.CollapsingHeader_TreeNodeFlags(@tagName(this.data));
+        if (this.expanded) {
             switch (this.data) {
                 .branches => |*branches| {
                     if (branches.branches_list == null) {
@@ -164,11 +173,11 @@ const Display = struct {
                         const selected = gui.Selectable2(branch, is_selected, .{});
                         if (selected) {
                             branches.selected_branch_index = i;
-                            var child = try alloc.create(Display);
-                            child.* = Display.init(alloc, .{ .commits = .{} });
-                            this.child = child;
-                            var commits = &child.data.commits;
-                            app.work.appendAssumeCapacity(.{ .list_git_log = .{ .request = {}, .response = &commits.logs } });
+                            this.child = try alloc.create(Display);
+                            this.child.?.* = Display.init(alloc, .{ .commits = .{} });
+                            var commits = &this.child.?.data.commits;
+                            app.work.appendAssumeCapacity(.{ .allocator = alloc, .work_type = .{ .list_git_log = .{ .request = {}, .response = &commits.logs } } });
+                            this.expanded = false;
                         }
                     }
                 },
@@ -183,7 +192,6 @@ const Display = struct {
                             }
                         }
                     }
-                    gui.Text2(gui.printZ("TODO", .{}));
                 },
             }
         }
