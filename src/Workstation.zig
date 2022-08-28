@@ -10,43 +10,46 @@ const Arena = std.heap.ArenaAllocator;
 const ArrayList = std.ArrayListUnmanaged;
 const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
+const RecordingAllocator = @import("RecordingAllocator.zig");
 
 const Workstation = @This();
 
+recording_allocator: RecordingAllocator,
 root_allocator: Allocator,
 
+debug_open: bool = true,
 exit_requested: bool = false,
 
 work: std.BoundedArray(Work, 32) = .{},
 
 commit_message: ?[]u8 = null,
 
-default_display: Display,
+default_display: ?Display = null,
 
 status: ?[]u8 = null,
 
-pub fn init(alloc: Allocator) !*Workstation {
-    var app = try alloc.create(Workstation);
-    errdefer alloc.destroy(app);
+pub fn init(input_allocator: Allocator) !*Workstation {
+    var app = try input_allocator.create(Workstation);
+    errdefer input_allocator.destroy(app);
+
     app.* = Workstation{
-        .root_allocator = alloc,
-        .default_display = Display.init(alloc, .{ .branches = .{} }),
+        .recording_allocator = RecordingAllocator.init(input_allocator),
+        .root_allocator = app.recording_allocator.allocator(),
     };
-    app.work.appendAssumeCapacity(.{ .allocator = alloc, .work_type = .{ .get_git_status = .{ .request = {}, .response = &app.status } } });
-    app.work.appendAssumeCapacity(.{ .allocator = app.default_display.arena.allocator(), .work_type = .{ .list_git_branches = .{ .request = {}, .response = &app.default_display.data.branches.branches_list } } });
+    const alloc = app.root_allocator;
+    app.default_display = Display.init(alloc, .{ .branches = .{} });
+
+    // app.work.appendAssumeCapacity(.{ .allocator = alloc, .work_type = .{ .get_git_status = .{ .request = {}, .response = &app.status } } });
+    app.work.appendAssumeCapacity(.{ .allocator = app.default_display.?.arena.allocator(), .work_type = .{ .list_git_branches = .{ .request = {}, .response = &app.default_display.?.data.branches.branches_list } } });
     return app;
 }
 
-pub fn deinit(app: *Workstation) void {
+pub fn deinit(app: *Workstation, input_allocator: Allocator) void {
     if (app.commit_message) |commit_message| app.root_allocator.free(commit_message);
 
-    if (app.status) |status| app.root_allocator.free(status);
+    if (app.default_display) |d| d.deinit();
 
-    app.default_display.deinit();
-
-    const alloc = app.root_allocator;
-    app.* = undefined;
-    alloc.destroy(app);
+    input_allocator.destroy(app);
 }
 
 fn WorkType(comptime req: type, comptime res: type) type {
@@ -127,6 +130,7 @@ pub fn processBackgroundWork(app: *Workstation) !void {
 
 const Display = struct {
     arena: Arena,
+    alloc: Allocator,
     expanded: bool = true,
     child: ?*Display = null,
 
@@ -143,17 +147,32 @@ const Display = struct {
 
     fn init(alloc: Allocator, data: anytype) Display {
         return Display{
+            .alloc = alloc,
             .arena = Arena.init(alloc),
             .data = data,
         };
     }
 
     fn deinit(self: Display) void {
+        if (self.child) |c| {
+            c.deinit();
+            self.alloc.destroy(self.child.?);
+        }
         self.arena.deinit();
     }
 
+    fn initNewChild(self: *Display, new_child: anytype) Allocator.Error!*Display {
+        if (self.child == null) {
+            self.child = try self.alloc.create(Display);
+        } else {
+            self.child.?.deinit();
+        }
+
+        self.child.?.* = Display.init(self.alloc, new_child);
+        return self.child.?;
+    }
+
     fn render(this: *Display, app: *Workstation) Allocator.Error!void {
-        const alloc = this.arena.allocator();
         gui.SetNextItemOpen(this.expanded);
         this.expanded = gui.CollapsingHeader_TreeNodeFlags(@tagName(this.data));
         if (this.expanded) {
@@ -173,10 +192,9 @@ const Display = struct {
                         const selected = gui.Selectable2(branch, is_selected, .{});
                         if (selected) {
                             branches.selected_branch_index = i;
-                            this.child = try alloc.create(Display);
-                            this.child.?.* = Display.init(alloc, .{ .commits = .{} });
-                            var commits = &this.child.?.data.commits;
-                            app.work.appendAssumeCapacity(.{ .allocator = alloc, .work_type = .{ .list_git_log = .{ .request = {}, .response = &commits.logs } } });
+                            const child = try this.initNewChild(.{ .commits = .{} });
+                            var commits = &child.data.commits;
+                            app.work.appendAssumeCapacity(.{ .allocator = child.arena.allocator(), .work_type = .{ .list_git_log = .{ .request = {}, .response = &commits.logs } } });
                             this.expanded = false;
                         }
                     }
@@ -207,10 +225,16 @@ pub fn render(app: *Workstation) !void {
 
     var view_open = true;
     var visible = gui.BeginExt("Branches", &view_open, .{});
-    defer gui.End();
-    if (!visible) return;
+    if (visible) {
+        if (app.default_display) |*d| try d.render(app);
+    }
+    gui.End();
 
-    try app.default_display.render(app);
+    visible = gui.BeginExt("Debug", &app.debug_open, .{});
+    if (visible) {
+        gui.TextFmt("Memory: {}", .{app.recording_allocator.bytes_allocated});
+    }
+    gui.End();
 }
 
 fn exec(alloc: Allocator, cmd: []const []const u8, args: struct {

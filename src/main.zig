@@ -99,7 +99,7 @@ pub fn main() !void {
     defer assert(!gpa.deinit());
     const allocator = gpa.allocator();
     var app = try Workstation.init(allocator);
-    defer app.deinit();
+    defer app.deinit(allocator);
 
     try gui.initTmpAllocator(allocator);
     defer gui.deinitTmpAllocator(allocator);
