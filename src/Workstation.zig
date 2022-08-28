@@ -130,7 +130,6 @@ pub fn processBackgroundWork(app: *Workstation) !void {
 
 const Display = struct {
     arena: Arena,
-    alloc: Allocator,
     expanded: bool = true,
     child: ?*Display = null,
 
@@ -147,28 +146,24 @@ const Display = struct {
 
     fn init(alloc: Allocator, data: anytype) Display {
         return Display{
-            .alloc = alloc,
             .arena = Arena.init(alloc),
             .data = data,
         };
     }
 
     fn deinit(self: Display) void {
-        if (self.child) |c| {
-            c.deinit();
-            self.alloc.destroy(self.child.?);
-        }
         self.arena.deinit();
     }
 
     fn initNewChild(self: *Display, new_child: anytype) Allocator.Error!*Display {
+        const alloc = self.arena.allocator();
         if (self.child == null) {
-            self.child = try self.alloc.create(Display);
+            self.child = try alloc.create(Display);
         } else {
             self.child.?.deinit();
         }
 
-        self.child.?.* = Display.init(self.alloc, new_child);
+        self.child.?.* = Display.init(alloc, new_child);
         return self.child.?;
     }
 
