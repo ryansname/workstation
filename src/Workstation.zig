@@ -22,11 +22,7 @@ exit_requested: bool = false,
 
 work: std.BoundedArray(Work, 32) = .{},
 
-commit_message: ?[]u8 = null,
-
 default_display: ?Display = null,
-
-status: ?[]u8 = null,
 
 pub fn init(input_allocator: Allocator) !*Workstation {
     var app = try input_allocator.create(Workstation);
@@ -39,14 +35,19 @@ pub fn init(input_allocator: Allocator) !*Workstation {
     const alloc = app.root_allocator;
     app.default_display = Display.init(alloc, .{ .branches = .{} });
 
-    // app.work.appendAssumeCapacity(.{ .allocator = alloc, .work_type = .{ .get_git_status = .{ .request = {}, .response = &app.status } } });
-    app.work.appendAssumeCapacity(.{ .allocator = app.default_display.?.arena.allocator(), .work_type = .{ .list_git_branches = .{ .request = {}, .response = &app.default_display.?.data.branches.branches_list } } });
+    app.work.appendAssumeCapacity(.{
+        .allocator = app.default_display.?.arena.allocator(),
+        .work_type = .{
+            .list_git_branches = .{
+                .request = {},
+                .response = &app.default_display.?.data.branches.branches_list,
+            },
+        },
+    });
     return app;
 }
 
 pub fn deinit(app: *Workstation, input_allocator: Allocator) void {
-    if (app.commit_message) |commit_message| app.root_allocator.free(commit_message);
-
     if (app.default_display) |d| d.deinit();
 
     input_allocator.destroy(app);
@@ -142,6 +143,9 @@ const Display = struct {
             logs: ?[][:0]u8 = null,
             selected_commit_index: ?usize = null,
         },
+        commit: struct {
+            message: ?[]u8 = null,
+        },
     },
 
     fn init(alloc: Allocator, data: anytype) Display {
@@ -189,7 +193,10 @@ const Display = struct {
                             branches.selected_branch_index = i;
                             const child = try this.initNewChild(.{ .commits = .{} });
                             var commits = &child.data.commits;
-                            app.work.appendAssumeCapacity(.{ .allocator = child.arena.allocator(), .work_type = .{ .list_git_log = .{ .request = {}, .response = &commits.logs } } });
+                            app.work.appendAssumeCapacity(.{
+                                .allocator = child.arena.allocator(),
+                                .work_type = .{ .list_git_log = .{ .request = {}, .response = &commits.logs } },
+                            });
                             this.expanded = false;
                         }
                     }
@@ -201,9 +208,20 @@ const Display = struct {
                             const selected = gui.Selectable_BoolExt(line, is_selected, .{}, .{ .x = 0, .y = 0 });
                             if (selected) {
                                 commits.selected_commit_index = i;
-                                // try app.work.append(.{ .get_git_commit = .{ .request = mem.sliceTo(line, ' '), .response = &app.commit_message } });
+                                const child = try this.initNewChild(.{ .commit = .{} });
+                                var commit = &child.data.commit;
+                                app.work.appendAssumeCapacity(.{
+                                    .allocator = child.arena.allocator(),
+                                    .work_type = .{ .get_git_commit = .{ .request = mem.sliceTo(line, ' '), .response = &commit.message } },
+                                });
+                                this.expanded = false;
                             }
                         }
+                    }
+                },
+                .commit => |*commit| {
+                    if (commit.message) |message| {
+                        gui.Text2(message);
                     }
                 },
             }
