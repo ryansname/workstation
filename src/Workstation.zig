@@ -33,7 +33,7 @@ pub fn init(input_allocator: Allocator) !*Workstation {
         .root_allocator = app.recording_allocator.allocator(),
     };
     const alloc = app.root_allocator;
-    app.default_display = Display.init(alloc, .{ .branches = .{} });
+    app.default_display = Display.init(alloc, "Branches", .{ .branches = .{} });
 
     app.work.appendAssumeCapacity(.{
         .allocator = app.default_display.?.arena.allocator(),
@@ -131,6 +131,8 @@ pub fn processBackgroundWork(app: *Workstation) !void {
 
 const Display = struct {
     arena: Arena,
+    header: []const u8,
+
     expanded: bool = true,
     child: ?*Display = null,
 
@@ -148,9 +150,10 @@ const Display = struct {
         },
     },
 
-    fn init(alloc: Allocator, data: anytype) Display {
+    fn init(alloc: Allocator, header: []const u8, data: anytype) Display {
         return Display{
             .arena = Arena.init(alloc),
+            .header = header,
             .data = data,
         };
     }
@@ -159,7 +162,7 @@ const Display = struct {
         self.arena.deinit();
     }
 
-    fn initNewChild(self: *Display, new_child: anytype) Allocator.Error!*Display {
+    fn initNewChild(self: *Display, header: []const u8, new_child: anytype) Allocator.Error!*Display {
         const alloc = self.arena.allocator();
         if (self.child == null) {
             self.child = try alloc.create(Display);
@@ -167,13 +170,13 @@ const Display = struct {
             self.child.?.deinit();
         }
 
-        self.child.?.* = Display.init(alloc, new_child);
+        self.child.?.* = Display.init(alloc, header, new_child);
         return self.child.?;
     }
 
     fn render(this: *Display, app: *Workstation) Allocator.Error!void {
         gui.SetNextItemOpen(this.expanded);
-        this.expanded = gui.CollapsingHeader_TreeNodeFlags(@tagName(this.data));
+        this.expanded = gui.CollapsingHeader_TreeNodeFlags(gui.printZ("{s}###{s}", .{ this.header, @tagName(this.data) }));
         if (this.expanded) {
             switch (this.data) {
                 .branches => |*branches| {
@@ -191,7 +194,7 @@ const Display = struct {
                         const selected = gui.Selectable2(branch, is_selected, .{});
                         if (selected) {
                             branches.selected_branch_index = i;
-                            const child = try this.initNewChild(.{ .commits = .{} });
+                            const child = try this.initNewChild(branch, .{ .commits = .{} });
                             var commits = &child.data.commits;
                             app.work.appendAssumeCapacity(.{
                                 .allocator = child.arena.allocator(),
@@ -208,7 +211,7 @@ const Display = struct {
                             const selected = gui.Selectable_BoolExt(line, is_selected, .{}, .{ .x = 0, .y = 0 });
                             if (selected) {
                                 commits.selected_commit_index = i;
-                                const child = try this.initNewChild(.{ .commit = .{} });
+                                const child = try this.initNewChild(line, .{ .commit = .{} });
                                 var commit = &child.data.commit;
                                 app.work.appendAssumeCapacity(.{
                                     .allocator = child.arena.allocator(),
