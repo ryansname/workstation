@@ -28,11 +28,11 @@ work: std.BoundedArray(Work, 32) = .{},
 
 default_display: ?Display = null,
 
-issue: JiraIssue = .{},
+issue: JiraIssue = .{ .fetching = {} },
 
-const JiraIssue = struct {
-    fetching: bool = true,
-    data: ?jira.IssueBean = null,
+const JiraIssue = union(enum) {
+    fetching: void,
+    data: jira.IssueBean,
 };
 
 pub fn init(input_allocator: Allocator) !*Workstation {
@@ -90,7 +90,7 @@ pub fn init(input_allocator: Allocator) !*Workstation {
 
 pub fn deinit(app: *Workstation, input_allocator: Allocator) void {
     if (app.default_display) |d| d.deinit();
-    if (app.issue.data) |data| data.deinit(input_allocator);
+    if (app.issue == .data) app.issue.data.deinit(input_allocator);
     app.client.deinit(app.root_allocator);
 
     input_allocator.destroy(app);
@@ -171,9 +171,8 @@ pub fn processBackgroundWork(app: *Workstation) !void {
             },
             .fetch_issue => |*fetch_issue| {
                 const issue = try jira.getIssue(app.client, alloc, fetch_issue.request);
-                fetch_issue.response.fetching = false;
                 log.warn("Summary: {s}", .{issue._200.fields.summary});
-                fetch_issue.response.data = issue._200;
+                fetch_issue.response.* = .{ .data = issue._200 };
             },
         }
     }
@@ -299,9 +298,9 @@ pub fn render(app: *Workstation) !void {
     var view_open_2 = true;
     var visible_2 = gui.BeginExt("Issue", &view_open_2, .{});
     if (visible_2) {
-        gui.Text2(gui.printZ("{}", .{app.issue.fetching}));
-        if (app.issue.data) |issue| {
-            gui.Text2(gui.printZ("{s}", .{issue.fields.summary}));
+        switch (app.issue) {
+            .fetching => gui.Text2(gui.printZ("{}", .{app.issue.fetching})),
+            .data => |issue| gui.Text2(gui.printZ("{s}", .{issue.fields.summary})),
         }
     }
     gui.End();
