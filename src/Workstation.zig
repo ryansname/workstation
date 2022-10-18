@@ -1,8 +1,10 @@
 const builtin = @import("builtin");
 const fs = std.fs;
 const heap = std.heap;
+const jira = @import("jira");
 const log = std.log;
 const mem = std.mem;
+const process = std.process;
 const std = @import("std");
 const gui = @import("gui.zig");
 
@@ -17,12 +19,21 @@ const Workstation = @This();
 recording_allocator: RecordingAllocator,
 root_allocator: Allocator,
 
+client: jira.Client,
+
 debug_open: bool = true,
 exit_requested: bool = false,
 
 work: std.BoundedArray(Work, 32) = .{},
 
 default_display: ?Display = null,
+
+issue: JiraIssue = .{},
+
+const JiraIssue = struct {
+    fetching: bool = true,
+    data: ?jira.IssueBean = null,
+};
 
 pub fn init(input_allocator: Allocator) !*Workstation {
     var app = try input_allocator.create(Workstation);
@@ -31,9 +42,29 @@ pub fn init(input_allocator: Allocator) !*Workstation {
     app.* = Workstation{
         .recording_allocator = RecordingAllocator.init(input_allocator),
         .root_allocator = app.recording_allocator.allocator(),
+        .client = undefined,
     };
+
     const alloc = app.root_allocator;
     app.default_display = Display.init(alloc, "Branches", .{ .branches = .{} });
+
+    app.client = try jira.Client.init("https://jira.com");
+    if (process.getEnvVarOwned(alloc, "WORKSTATION_USERNAME")) |username| {
+        defer alloc.free(username);
+        if (process.getEnvVarOwned(alloc, "WORKSTATION_PASSWORD")) |password| {
+            defer alloc.free(password);
+            try app.client.authorize(alloc, username, password);
+        } else |err| {
+            if (err == error.EnvironmentVariableNotFound) {} else {
+                return err;
+            }
+        }
+    } else |err| {
+        if (err == error.EnvironmentVariableNotFound) {} else {
+            return err;
+        }
+    }
+    errdefer app.client.deinit(alloc);
 
     app.work.appendAssumeCapacity(.{
         .allocator = app.default_display.?.arena.allocator(),
@@ -44,11 +75,23 @@ pub fn init(input_allocator: Allocator) !*Workstation {
             },
         },
     });
+
+    app.work.appendAssumeCapacity(.{
+        .allocator = app.root_allocator,
+        .work_type = .{
+            .fetch_issue = .{
+                .request = "DAVE-1",
+                .response = &app.issue,
+            },
+        },
+    });
     return app;
 }
 
 pub fn deinit(app: *Workstation, input_allocator: Allocator) void {
     if (app.default_display) |d| d.deinit();
+    if (app.issue.data) |data| data.deinit(input_allocator);
+    app.client.deinit(app.root_allocator);
 
     input_allocator.destroy(app);
 }
@@ -67,6 +110,7 @@ const Work = struct {
         list_git_log: WorkType(void, ?[][:0]u8),
         get_git_commit: WorkType([]u8, ?[]u8),
         list_git_branches: WorkType(void, ?[][]u8),
+        fetch_issue: WorkType([]const u8, JiraIssue),
     },
 };
 
@@ -124,6 +168,12 @@ pub fn processBackgroundWork(app: *Workstation) !void {
 
                 const slice = lines.toOwnedSlice(alloc);
                 list_git_branches.response.* = slice;
+            },
+            .fetch_issue => |*fetch_issue| {
+                const issue = try jira.getIssue(app.client, alloc, fetch_issue.request);
+                fetch_issue.response.fetching = false;
+                log.warn("Summary: {s}", .{issue._200.fields.summary});
+                fetch_issue.response.data = issue._200;
             },
         }
     }
@@ -243,6 +293,16 @@ pub fn render(app: *Workstation) !void {
     var visible = gui.BeginExt("Branches", &view_open, .{});
     if (visible) {
         if (app.default_display) |*d| try d.render(app);
+    }
+    gui.End();
+
+    var view_open_2 = true;
+    var visible_2 = gui.BeginExt("Issue", &view_open_2, .{});
+    if (visible_2) {
+        gui.Text2(gui.printZ("{}", .{app.issue.fetching}));
+        if (app.issue.data) |issue| {
+            gui.Text2(gui.printZ("{s}", .{issue.fields.summary}));
+        }
     }
     gui.End();
 

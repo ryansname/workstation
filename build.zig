@@ -50,6 +50,8 @@ fn addDeps(exe: *std.build.LibExeObjStep, target: std.zig.CrossTarget) void {
     linkGlad(exe, target);
     linkGlfw(exe, target);
 
+    linkJira(exe, target);
+
     exe.addLibPath("/opt/homebrew/lib/");
     exe.addIncludeDir("/opt/homebrew/include/");
 }
@@ -68,4 +70,10 @@ fn linkGlfw(exe: *std.build.LibExeObjStep, target: std.zig.CrossTarget) void {
     } else {
         exe.linkSystemLibrary("glfw");
     }
+}
+
+fn linkJira(exe: *std.build.LibExeObjStep, target: std.zig.CrossTarget) void {
+    _ = target;
+    exe.addPackagePath("jira", "libs/jira-client/jira-client.zig");
+    exe.linkSystemLibrary("curl");
 }

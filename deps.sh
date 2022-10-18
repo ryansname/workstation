@@ -14,3 +14,5 @@ COMPILER_DIR=zig-${ZIG_VERSION}
 
 popd
 
+. ./env.sh
+
