@@ -12,6 +12,14 @@ COMPILER_DIR=zig-${ZIG_VERSION}
 [ ! -d zig-imgui ] && git clone https://github.com/SpexGuy/Zig-ImGui.git
 (cd zig-imgui && git fetch && git checkout 0a2cfca)
 
+pushd ../..
+[ ! -d zig-jira-client ] && git clone git@github.com:ryansname/zig-jira-client.git
+(cd zig-jira-client && git fetch && git checkout df165702ca3aa80ff8c1cb79af8b5027ef07a843)
+popd
+
+[ ! -d jira-client ] && mkdir jira-client
+ln -f ../../zig-jira-client/* jira-client/
+
 popd
 
 . ./env.sh

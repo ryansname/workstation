@@ -21,6 +21,7 @@ fn glfw_error_callback(err: c_int, description: ?[*:0]const u8) callconv(.C) voi
 }
 
 pub fn main() !void {
+
     // Setup window
     _ = glfw.glfwSetErrorCallback(glfw_error_callback);
     if (glfw.glfwInit() == 0)
@@ -98,11 +99,14 @@ pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer assert(!gpa.deinit());
     const allocator = gpa.allocator();
-    var app = try Workstation.init(allocator);
-    defer app.deinit(allocator);
 
     try gui.initTmpAllocator(allocator);
     defer gui.deinitTmpAllocator(allocator);
+
+    var app = try Workstation.init(allocator);
+    defer app.deinit(allocator);
+
+    try app.start_workers();
 
     // Main loop
     while (glfw.glfwWindowShouldClose(window) == 0 and !app.exit_requested) {

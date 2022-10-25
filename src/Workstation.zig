@@ -7,6 +7,7 @@ const mem = std.mem;
 const process = std.process;
 const std = @import("std");
 const gui = @import("gui.zig");
+const worker = @import("worker.zig");
 
 const Arena = std.heap.ArenaAllocator;
 const ArrayList = std.ArrayListUnmanaged;
@@ -19,6 +20,8 @@ const Workstation = @This();
 recording_allocator: RecordingAllocator,
 root_allocator: Allocator,
 
+jira_worker: worker.Worker(JiraWork, JiraWorkContext, &processJiraWork),
+
 client: jira.Client,
 
 debug_open: bool = true,
@@ -28,7 +31,8 @@ work: std.BoundedArray(Work, 32) = .{},
 
 default_display: ?Display = null,
 
-issue: JiraIssue = .{ .fetching = {} },
+issue_1: JiraIssue = .{ .fetching = {} },
+issue_2: JiraIssue = .{ .fetching = {} },
 
 const JiraIssue = union(enum) {
     fetching: void,
@@ -43,9 +47,13 @@ pub fn init(input_allocator: Allocator) !*Workstation {
         .recording_allocator = RecordingAllocator.init(input_allocator),
         .root_allocator = app.recording_allocator.allocator(),
         .client = undefined,
+        .jira_worker = undefined,
     };
-
     const alloc = app.root_allocator;
+
+    app.jira_worker = .{ .allocator = alloc };
+    errdefer app.jira_worker.deinit();
+
     app.default_display = Display.init(alloc, "Branches", .{ .branches = .{} });
 
     app.client = try jira.Client.init("https://jira.com");
@@ -76,12 +84,21 @@ pub fn init(input_allocator: Allocator) !*Workstation {
         },
     });
 
-    app.work.appendAssumeCapacity(.{
-        .allocator = app.root_allocator,
+    try app.jira_worker.submit(.{
+        .allocator = alloc,
         .work_type = .{
             .fetch_issue = .{
                 .request = "DAVE-1",
-                .response = &app.issue,
+                .response = &app.issue_1,
+            },
+        },
+    });
+    try app.jira_worker.submit(.{
+        .allocator = alloc,
+        .work_type = .{
+            .fetch_issue = .{
+                .request = "DAVE-2",
+                .response = &app.issue_2,
             },
         },
     });
@@ -90,10 +107,16 @@ pub fn init(input_allocator: Allocator) !*Workstation {
 
 pub fn deinit(app: *Workstation, input_allocator: Allocator) void {
     if (app.default_display) |d| d.deinit();
-    if (app.issue == .data) app.issue.data.deinit(input_allocator);
+    if (app.issue_1 == .data) app.issue_1.data.deinit(input_allocator);
+    if (app.issue_2 == .data) app.issue_2.data.deinit(input_allocator);
     app.client.deinit(app.root_allocator);
 
     input_allocator.destroy(app);
+}
+
+pub fn start_workers(app: *Workstation) !void {
+    var jira_worker = try app.jira_worker.start_worker(.{ .client = &app.client });
+    _ = jira_worker;
 }
 
 fn WorkType(comptime req: type, comptime res: type) type {
@@ -110,9 +133,32 @@ const Work = struct {
         list_git_log: WorkType(void, ?[][:0]u8),
         get_git_commit: WorkType([]u8, ?[]u8),
         list_git_branches: WorkType(void, ?[][]u8),
+    },
+};
+
+const JiraWorkContext = struct {
+    client: *jira.Client,
+};
+
+const JiraWork = struct {
+    allocator: Allocator,
+
+    work_type: union(enum) {
         fetch_issue: WorkType([]const u8, JiraIssue),
     },
 };
+
+fn processJiraWork(arena: heap.ArenaAllocator, context: JiraWorkContext, work: *JiraWork) !void {
+    _ = arena;
+    switch (work.*.work_type) {
+        .fetch_issue => |*fetch_issue| {
+            const issue = try jira.getIssue(context.client.*, work.allocator, fetch_issue.request);
+            errdefer issue.deinit(work.allocator);
+            log.warn("Summary: {s}", .{issue._200.fields.summary});
+            fetch_issue.response.* = .{ .data = issue._200 };
+        },
+    }
+}
 
 pub fn processBackgroundWork(app: *Workstation) !void {
     if (app.work.popOrNull()) |*work| {
@@ -168,11 +214,6 @@ pub fn processBackgroundWork(app: *Workstation) !void {
 
                 const slice = lines.toOwnedSlice(alloc);
                 list_git_branches.response.* = slice;
-            },
-            .fetch_issue => |*fetch_issue| {
-                const issue = try jira.getIssue(app.client, alloc, fetch_issue.request);
-                log.warn("Summary: {s}", .{issue._200.fields.summary});
-                fetch_issue.response.* = .{ .data = issue._200 };
             },
         }
     }
@@ -298,8 +339,12 @@ pub fn render(app: *Workstation) !void {
     var view_open_2 = true;
     var visible_2 = gui.BeginExt("Issue", &view_open_2, .{});
     if (visible_2) {
-        switch (app.issue) {
-            .fetching => gui.Text2(gui.printZ("{}", .{app.issue.fetching})),
+        switch (app.issue_1) {
+            .fetching => gui.Text2(gui.printZ("{}", .{app.issue_1.fetching})),
+            .data => |issue| gui.Text2(gui.printZ("{s}", .{issue.fields.summary})),
+        }
+        switch (app.issue_2) {
+            .fetching => gui.Text2(gui.printZ("{}", .{app.issue_2.fetching})),
             .data => |issue| gui.Text2(gui.printZ("{s}", .{issue.fields.summary})),
         }
     }
