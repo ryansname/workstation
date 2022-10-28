@@ -34,6 +34,8 @@ default_display: ?Display = null,
 issue_1: JiraIssue = .{ .fetching = {} },
 issue_2: JiraIssue = .{ .fetching = {} },
 
+buf: [64]u8 = [_]u8{0} ** 64,
+
 const JiraIssue = union(enum) {
     fetching: void,
     data: jira.IssueBean,
@@ -323,8 +325,8 @@ const Display = struct {
     }
 };
 
-pub fn render(app: *Workstation) !void {
-    if (gui.IsKeyPressed(.Q)) {
+pub fn render(app: *Workstation, io: gui.IO) !void {
+    if (!io.WantTextInput and gui.IsKeyPressed(.Q)) {
         app.exit_requested = true;
         return;
     }
@@ -339,6 +341,22 @@ pub fn render(app: *Workstation) !void {
     var view_open_2 = true;
     var visible_2 = gui.BeginExt("Issue", &view_open_2, .{});
     if (visible_2) {
+        _ = gui.InputText("Issue Key", &app.buf, app.buf.len);
+        const changed = gui.IsItemDeactivatedAfterEdit();
+        _ = changed;
+        const dynamic_issue = if (mem.eql(u8, "DAVE-1", app.buf[0..6])) blk: {
+            break :blk &app.issue_1;
+        } else if (mem.eql(u8, "DAVE-2", app.buf[0..6])) blk: {
+            break :blk &app.issue_2;
+        } else null;
+
+        if (dynamic_issue) |i| {
+            switch (i.*) {
+                .fetching => gui.Text2(gui.printZ("{}", .{app.issue_1.fetching})),
+                .data => |issue| gui.Text2(gui.printZ("{s}", .{issue.fields.summary})),
+            }
+        }
+
         switch (app.issue_1) {
             .fetching => gui.Text2(gui.printZ("{}", .{app.issue_1.fetching})),
             .data => |issue| gui.Text2(gui.printZ("{s}", .{issue.fields.summary})),

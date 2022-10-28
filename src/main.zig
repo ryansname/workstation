@@ -127,7 +127,8 @@ pub fn main() !void {
             imgui.ShowDemoWindowExt(&show_demo_window);
 
         try app.processBackgroundWork();
-        try app.render();
+
+        try app.render(io.*);
 
         // Rendering
         imgui.Render();
