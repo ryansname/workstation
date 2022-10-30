@@ -105,6 +105,7 @@ const Work = struct {
 };
 
 pub fn processBackgroundWork(app: *Workstation) !void {
+    app.jira_store.processBackgroundWork();
     if (app.work.popOrNull()) |*work| {
         const alloc = work.allocator;
         switch (work.*.work_type) {
@@ -286,18 +287,12 @@ pub fn render(app: *Workstation, io: gui.IO) !void {
         _ = gui.InputText("Issue Key", &app.buf, app.buf.len);
         const changed = gui.IsItemDeactivatedAfterEdit();
         _ = changed;
-        const dynamic_issue = if (mem.eql(u8, "DAVE-1", app.buf[0..6])) blk: {
-            break :blk app.jira_store.requestIssue("DAVE-1");
-        } else if (mem.eql(u8, "DAVE-2", app.buf[0..6])) blk: {
-            break :blk app.jira_store.requestIssue("DAVE-2");
-        } else null;
 
-        if (dynamic_issue) |i| {
-            switch (i) {
-                .fetching => gui.Text2("Fetching"),
-                .data => |issue| gui.Text2(gui.printZ("{s}", .{issue.fields.summary})),
-                .failed => |reason| gui.Text2(reason),
-            }
+        const dynamic_issue = app.jira_store.requestIssue(mem.sliceTo(&app.buf, 0));
+        switch (dynamic_issue) {
+            .fetching => gui.Text2("Fetching"),
+            .data => |issue| gui.Text2(gui.printZ("{s}", .{issue.fields.summary})),
+            .failed => |reason| gui.Text2(reason),
         }
 
         switch (app.jira_store.requestIssue("DAVE-1")) {

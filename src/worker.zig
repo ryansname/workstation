@@ -15,13 +15,21 @@ const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
 const RecordingAllocator = @import("RecordingAllocator.zig");
 
-pub fn Worker(comptime WorkType: type, comptime WorkContext: type, comptime work_fn: *const fn (heap.ArenaAllocator, WorkContext, *WorkType) anyerror!void) type {
+pub fn CreateWorkType(comptime RequestType: type, comptime ResponseType: type) type {
+    return struct {
+        request: RequestType,
+        response: ?ResponseType = null,
+    };
+}
+
+pub fn Worker(comptime WorkType: type, comptime WorkContext: type, comptime work_fn: *const fn (heap.ArenaAllocator, WorkContext, *WorkType) void) type {
     return struct {
         run: bool = true,
         allocator: Allocator,
 
         semaphore: std.Thread.Semaphore = .{},
-        queue: atomic.Queue(WorkType) = atomic.Queue(WorkType).init(),
+        submissions: atomic.Queue(WorkType) = atomic.Queue(WorkType).init(),
+        results: atomic.Queue(WorkType) = atomic.Queue(WorkType).init(),
 
         const Self = @This();
         const Queue = atomic.Queue(WorkType);
@@ -38,8 +46,17 @@ pub fn Worker(comptime WorkType: type, comptime WorkContext: type, comptime work
             errdefer worker.allocator.destroy(node);
 
             node.data = job;
-            worker.queue.put(node);
+            worker.submissions.put(node);
             worker.semaphore.post();
+        }
+
+        pub fn poll(worker: *Self) ?WorkType {
+            const node = worker.results.get();
+            if (node == null) return null;
+            defer worker.allocator.destroy(node.?);
+
+            const result = node.?.data;
+            return result;
         }
 
         pub fn start_worker(worker: *Self, context: WorkContext) !void {
@@ -54,17 +71,16 @@ pub fn Worker(comptime WorkType: type, comptime WorkContext: type, comptime work
             while (worker.run) {
                 worker.semaphore.wait();
                 if (!worker.run) continue;
-                const node = worker.queue.get();
+                const node = worker.submissions.get();
                 if (node == null) continue;
-                defer worker.allocator.destroy(node.?);
 
                 var arena = heap.ArenaAllocator.init(worker.allocator);
                 defer arena.deinit();
 
-                var data = node.?.data;
-                log.info("{}", .{data});
-                // TODO: worker needs to keep working on error
-                _ = work_fn.*(arena, context, &data) catch {};
+                var data = &node.?.data;
+                work_fn.*(arena, context, data);
+
+                worker.results.put(node.?);
             }
         }
     };
