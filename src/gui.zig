@@ -7,9 +7,16 @@ const imgui = @import("imgui");
 pub usingnamespace imgui;
 
 pub inline fn Text2(text: anytype) void {
-    const text_start: [*]const u8 = text.ptr;
-    const text_end: [*]const u8 = text.ptr + text.len;
-    imgui.TextUnformattedExt(text_start, text_end);
+    const type_info = @typeInfo(@TypeOf(text));
+    if (type_info == .Pointer and @typeInfo(type_info.Pointer.child) == .Array) {
+        const text_start: [*]const u8 = &text.*;
+        const text_end: [*]const u8 = text_start + text.len;
+        imgui.TextUnformattedExt(text_start, text_end);
+    } else {
+        const text_start: [*]const u8 = text.ptr;
+        const text_end: [*]const u8 = text.ptr + text.len;
+        imgui.TextUnformattedExt(text_start, text_end);
+    }
 }
 
 pub inline fn TextFmt(comptime format: []const u8, args: anytype) void {

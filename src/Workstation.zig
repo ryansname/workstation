@@ -13,6 +13,7 @@ const Arena = std.heap.ArenaAllocator;
 const ArrayList = std.ArrayListUnmanaged;
 const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
+const JiraStore = @import("JiraStore.zig");
 const RecordingAllocator = @import("RecordingAllocator.zig");
 
 const Workstation = @This();
@@ -20,9 +21,7 @@ const Workstation = @This();
 recording_allocator: RecordingAllocator,
 root_allocator: Allocator,
 
-jira_worker: worker.Worker(JiraWork, JiraWorkContext, &processJiraWork),
-
-client: jira.Client,
+jira_store: JiraStore,
 
 debug_open: bool = true,
 exit_requested: bool = false,
@@ -31,15 +30,7 @@ work: std.BoundedArray(Work, 32) = .{},
 
 default_display: ?Display = null,
 
-issue_1: JiraIssue = .{ .fetching = {} },
-issue_2: JiraIssue = .{ .fetching = {} },
-
 buf: [64]u8 = [_]u8{0} ** 64,
-
-const JiraIssue = union(enum) {
-    fetching: void,
-    data: jira.IssueBean,
-};
 
 pub fn init(input_allocator: Allocator) !*Workstation {
     var app = try input_allocator.create(Workstation);
@@ -48,22 +39,19 @@ pub fn init(input_allocator: Allocator) !*Workstation {
     app.* = Workstation{
         .recording_allocator = RecordingAllocator.init(input_allocator),
         .root_allocator = app.recording_allocator.allocator(),
-        .client = undefined,
-        .jira_worker = undefined,
+        .jira_store = undefined,
     };
     const alloc = app.root_allocator;
 
-    app.jira_worker = .{ .allocator = alloc };
-    errdefer app.jira_worker.deinit();
-
     app.default_display = Display.init(alloc, "Branches", .{ .branches = .{} });
 
-    app.client = try jira.Client.init("https://jira.com");
+    app.jira_store = try JiraStore.init(app.root_allocator);
+    errdefer app.jira_store.deinit();
     if (process.getEnvVarOwned(alloc, "WORKSTATION_USERNAME")) |username| {
         defer alloc.free(username);
         if (process.getEnvVarOwned(alloc, "WORKSTATION_PASSWORD")) |password| {
             defer alloc.free(password);
-            try app.client.authorize(alloc, username, password);
+            try app.jira_store.authorize(username, password);
         } else |err| {
             if (err == error.EnvironmentVariableNotFound) {} else {
                 return err;
@@ -74,7 +62,6 @@ pub fn init(input_allocator: Allocator) !*Workstation {
             return err;
         }
     }
-    errdefer app.client.deinit(alloc);
 
     app.work.appendAssumeCapacity(.{
         .allocator = app.default_display.?.arena.allocator(),
@@ -86,42 +73,21 @@ pub fn init(input_allocator: Allocator) !*Workstation {
         },
     });
 
-    try app.jira_worker.submit(.{
-        .allocator = alloc,
-        .work_type = .{
-            .fetch_issue = .{
-                .request = "DAVE-1",
-                .response = &app.issue_1,
-            },
-        },
-    });
-    try app.jira_worker.submit(.{
-        .allocator = alloc,
-        .work_type = .{
-            .fetch_issue = .{
-                .request = "DAVE-2",
-                .response = &app.issue_2,
-            },
-        },
-    });
     return app;
 }
 
 pub fn deinit(app: *Workstation, input_allocator: Allocator) void {
     if (app.default_display) |d| d.deinit();
-    if (app.issue_1 == .data) app.issue_1.data.deinit(input_allocator);
-    if (app.issue_2 == .data) app.issue_2.data.deinit(input_allocator);
-    app.client.deinit(app.root_allocator);
+    app.jira_store.deinit();
 
     input_allocator.destroy(app);
 }
 
 pub fn start_workers(app: *Workstation) !void {
-    var jira_worker = try app.jira_worker.start_worker(.{ .client = &app.client });
-    _ = jira_worker;
+    try app.jira_store.start_worker();
 }
 
-fn WorkType(comptime req: type, comptime res: type) type {
+pub fn WorkType(comptime req: type, comptime res: type) type {
     return struct {
         request: req,
         response: *res,
@@ -137,30 +103,6 @@ const Work = struct {
         list_git_branches: WorkType(void, ?[][]u8),
     },
 };
-
-const JiraWorkContext = struct {
-    client: *jira.Client,
-};
-
-const JiraWork = struct {
-    allocator: Allocator,
-
-    work_type: union(enum) {
-        fetch_issue: WorkType([]const u8, JiraIssue),
-    },
-};
-
-fn processJiraWork(arena: heap.ArenaAllocator, context: JiraWorkContext, work: *JiraWork) !void {
-    _ = arena;
-    switch (work.*.work_type) {
-        .fetch_issue => |*fetch_issue| {
-            const issue = try jira.getIssue(context.client.*, work.allocator, fetch_issue.request);
-            errdefer issue.deinit(work.allocator);
-            log.warn("Summary: {s}", .{issue._200.fields.summary});
-            fetch_issue.response.* = .{ .data = issue._200 };
-        },
-    }
-}
 
 pub fn processBackgroundWork(app: *Workstation) !void {
     if (app.work.popOrNull()) |*work| {
@@ -345,25 +287,28 @@ pub fn render(app: *Workstation, io: gui.IO) !void {
         const changed = gui.IsItemDeactivatedAfterEdit();
         _ = changed;
         const dynamic_issue = if (mem.eql(u8, "DAVE-1", app.buf[0..6])) blk: {
-            break :blk &app.issue_1;
+            break :blk app.jira_store.requestIssue("DAVE-1");
         } else if (mem.eql(u8, "DAVE-2", app.buf[0..6])) blk: {
-            break :blk &app.issue_2;
+            break :blk app.jira_store.requestIssue("DAVE-2");
         } else null;
 
         if (dynamic_issue) |i| {
-            switch (i.*) {
-                .fetching => gui.Text2(gui.printZ("{}", .{app.issue_1.fetching})),
+            switch (i) {
+                .fetching => gui.Text2("Fetching"),
                 .data => |issue| gui.Text2(gui.printZ("{s}", .{issue.fields.summary})),
+                .failed => |reason| gui.Text2(reason),
             }
         }
 
-        switch (app.issue_1) {
-            .fetching => gui.Text2(gui.printZ("{}", .{app.issue_1.fetching})),
+        switch (app.jira_store.requestIssue("DAVE-1")) {
+            .fetching => gui.Text2("Fetching"),
             .data => |issue| gui.Text2(gui.printZ("{s}", .{issue.fields.summary})),
+            .failed => |reason| gui.Text2(reason),
         }
-        switch (app.issue_2) {
-            .fetching => gui.Text2(gui.printZ("{}", .{app.issue_2.fetching})),
+        switch (app.jira_store.requestIssue("DAVE-2")) {
+            .fetching => gui.Text2("Fetching"),
             .data => |issue| gui.Text2(gui.printZ("{s}", .{issue.fields.summary})),
+            .failed => |reason| gui.Text2(reason),
         }
     }
     gui.End();
