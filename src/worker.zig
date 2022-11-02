@@ -36,8 +36,15 @@ pub fn Worker(comptime WorkType: type, comptime WorkContext: type, comptime work
         const Node = Queue.Node;
 
         pub fn deinit(worker: *Self) void {
-            // TODO: deinit the queue;
             worker.run = false;
+
+            while (worker.submissions.get()) |node| {
+                worker.allocator.destroy(node);
+            }
+            while (worker.results.get()) |node| {
+                worker.allocator.destroy(node);
+            }
+
             worker.semaphore.post();
         }
 
