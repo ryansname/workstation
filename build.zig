@@ -52,13 +52,13 @@ fn addDeps(exe: *std.build.LibExeObjStep, target: std.zig.CrossTarget) void {
 
     linkJira(exe, target);
 
-    exe.addLibPath("/opt/homebrew/lib/");
-    exe.addIncludeDir("/opt/homebrew/include/");
+    exe.addLibraryPath("/opt/homebrew/lib/");
+    exe.addIncludePath("/opt/homebrew/include/");
 }
 
 fn linkGlad(exe: *std.build.LibExeObjStep, target: std.zig.CrossTarget) void {
     _ = target;
-    exe.addIncludeDir("src/libs/glad/");
+    exe.addIncludePath("src/libs/glad/");
     exe.addCSourceFiles(&[_][]const u8{"src/libs/glad/glad.c"}, &[_][]const u8{"-std=c99"});
 }
 

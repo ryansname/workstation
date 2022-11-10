@@ -17,13 +17,14 @@ const Workstation = @import("Workstation.zig");
 const is_darwin = builtin.os.tag.isDarwin();
 
 fn glfw_error_callback(err: c_int, description: ?[*:0]const u8) callconv(.C) void {
-    std.debug.print("Glfw Error {}: {s}\n", .{ err, description });
+    const description_safe = description orelse "<null>"[0..];
+    std.debug.print("Glfw Error {}: {s}\n", .{ err, description_safe });
 }
 
 pub fn main() !void {
 
     // Setup window
-    _ = glfw.glfwSetErrorCallback(glfw_error_callback);
+    _ = glfw.glfwSetErrorCallback(&glfw_error_callback);
     if (glfw.glfwInit() == 0)
         return error.GlfwInitFailed;
 
@@ -81,7 +82,7 @@ pub fn main() !void {
     defer gui.FontConfig.deinit(&font_config);
     font_config.FontDataOwnedByAtlas = false; // In static memory, so it cannot be freed
 
-    const font_data = @embedFile("../fonts/Hack-Regular.ttf");
+    const font_data = @embedFile("fonts/Hack-Regular.ttf");
     assert(io.Fonts.?.AddFontFromMemoryTTFExt(@intToPtr(*u8, @ptrToInt(font_data)), font_data.len, 13.0, &font_config, null) != null);
     _ = io.Fonts.?.AddFontDefault();
 
