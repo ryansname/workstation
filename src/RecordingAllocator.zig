@@ -16,44 +16,52 @@ pub fn init(parent_allocator: Allocator) Self {
 }
 
 pub fn allocator(self: *Self) Allocator {
-    return Allocator.init(self, alloc, resize, free);
+    return .{
+        .ptr = self,
+        .vtable = &.{
+            .alloc = alloc,
+            .resize = resize,
+            .free = free,
+        },
+    };
 }
 
 fn alloc(
-    self: *Self,
+    ctx: *anyopaque,
     len: usize,
-    ptr_align: u29,
-    len_align: u29,
-    ra: usize,
-) error{OutOfMemory}![]u8 {
-    const result = try self.parent_allocator.rawAlloc(len, ptr_align, len_align, ra);
-    self.bytes_allocated += result.len;
+    log2_ptr_align: u8,
+    ret_addr: usize,
+) ?[*]u8 {
+    const self = @ptrCast(*Self, @alignCast(@alignOf(Self), ctx));
+
+    const result = self.parent_allocator.rawAlloc(len, log2_ptr_align, ret_addr);
+    self.bytes_allocated += if (result != null) len else 0;
     return result;
 }
 
 fn resize(
-    self: *Self,
+    ctx: *anyopaque,
     buf: []u8,
-    buf_align: u29,
+    log2_buf_align: u8,
     new_len: usize,
-    len_align: u29,
-    ra: usize,
-) ?usize {
-    if (self.parent_allocator.rawResize(buf, buf_align, new_len, len_align, ra)) |resized_len| {
-        self.bytes_allocated -= buf.len;
-        self.bytes_allocated += resized_len;
-        return resized_len;
-    }
+    ret_addr: usize,
+) bool {
+    const self = @ptrCast(*Self, @alignCast(@alignOf(Self), ctx));
 
-    return null;
+    self.bytes_allocated -= buf.len;
+    defer self.bytes_allocated += new_len;
+
+    return self.parent_allocator.rawResize(buf, log2_buf_align, new_len, ret_addr);
 }
 
 fn free(
-    self: *Self,
+    ctx: *anyopaque,
     buf: []u8,
-    buf_align: u29,
-    ra: usize,
+    log2_buf_align: u8,
+    ret_addr: usize,
 ) void {
-    self.parent_allocator.rawFree(buf, buf_align, ra);
+    const self = @ptrCast(*Self, @alignCast(@alignOf(Self), ctx));
+
     self.bytes_allocated -= buf.len;
+    self.parent_allocator.rawFree(buf, log2_buf_align, ret_addr);
 }

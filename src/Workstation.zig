@@ -130,7 +130,7 @@ pub fn processBackgroundWork(app: *Workstation) !void {
 
                     linesZ.appendAssumeCapacity(lineZ);
                 }
-                const slice = linesZ.toOwnedSlice(alloc);
+                const slice = try linesZ.toOwnedSlice(alloc);
                 list_git_log.response.* = slice;
             },
             .get_git_commit => |*get_git_commit| {
@@ -157,7 +157,7 @@ pub fn processBackgroundWork(app: *Workstation) !void {
                     lines.appendAssumeCapacity(try alloc.dupe(u8, branch));
                 }
 
-                const slice = lines.toOwnedSlice(alloc);
+                const slice = try lines.toOwnedSlice(alloc);
                 list_git_branches.response.* = slice;
             },
         }
@@ -224,7 +224,7 @@ const Display = struct {
                     if (branches.selected_branch_index) |branch_index| {
                         gui.Text2(branches_list[branch_index]);
                     }
-                    for (branches_list) |branch, i| {
+                    for (branches_list, 0..) |branch, i| {
                         const is_selected = branches.selected_branch_index == i;
                         const selected = gui.Selectable2(branch, is_selected, .{});
                         if (selected) {
@@ -241,7 +241,7 @@ const Display = struct {
                 },
                 .commits => |*commits| {
                     if (commits.logs) |logs| {
-                        for (logs) |line, i| {
+                        for (logs, 0..) |line, i| {
                             const is_selected = commits.selected_commit_index == i;
                             const selected = gui.Selectable_BoolExt(line, is_selected, .{}, .{ .x = 0, .y = 0 });
                             if (selected) {
@@ -291,6 +291,7 @@ pub fn render(app: *Workstation, io: gui.IO) !void {
         const dynamic_issue = app.jira_store.requestIssue(mem.sliceTo(&app.buf, 0));
         switch (dynamic_issue) {
             .fetching => gui.Text2("Fetching"),
+            // .data => |issue| gui.Text2(gui.printZ("{s}", .{issue.get("fields").?.object.get("summary").?})),
             .data => |issue| gui.Text2(gui.printZ("{s}", .{issue.fields.summary})),
             .failed => |reason| gui.Text2(reason),
         }

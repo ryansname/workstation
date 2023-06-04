@@ -72,34 +72,37 @@ const ScratchAllocator = struct {
     }
 
     pub fn allocator(self: *ScratchAllocator) Allocator {
-        return Allocator.init(
-            self,
-            alloc,
-            Allocator.NoResize(ScratchAllocator).noResize,
-            Allocator.NoOpFree(ScratchAllocator).noOpFree,
-        );
+        return .{
+            .ptr = self,
+            .vtable = &.{
+                .alloc = alloc,
+                .resize = Allocator.noResize,
+                .free = Allocator.noFree,
+            },
+        };
     }
 
-    fn alloc(self: *ScratchAllocator, n: usize, ptr_align: u29, len_align: u29, ret_addr: usize) ![]u8 {
+    fn alloc(ctx: *anyopaque, len: usize, log2_ptr_align: u8, ret_addr: usize) ?[*]u8 {
+        const self = @ptrCast(*ScratchAllocator, @alignCast(@alignOf(ScratchAllocator), ctx));
         const addr = @ptrToInt(self.buffer.ptr) + self.end_index;
-        const adjusted_addr = mem.alignForward(addr, ptr_align);
+        const adjusted_addr = mem.alignForwardLog2(addr, log2_ptr_align);
         const adjusted_index = self.end_index + (adjusted_addr - addr);
-        const new_end_index = adjusted_index + n;
+        const new_end_index = adjusted_index + len;
 
         if (new_end_index > self.buffer.len) {
             // if more memory is requested then we have in our buffer leak like a sieve!
-            if (n > self.buffer.len) {
+            if (len > self.buffer.len) {
                 log.warn("\n---------\nwarning: tmp allocated more than is in our temp allocator. This memory WILL leak!\n--------\n", .{});
-                return self.backup_allocator.vtable.alloc(self, n, ptr_align, len_align, ret_addr);
+                return self.backup_allocator.vtable.alloc(self, len, log2_ptr_align, ret_addr);
             }
 
-            const result = self.buffer[0..n];
-            self.end_index = n;
-            return result;
+            const result = self.buffer[0..len];
+            self.end_index = len;
+            return result.ptr;
         }
         const result = self.buffer[adjusted_index..new_end_index];
         self.end_index = new_end_index;
 
-        return result;
+        return result.ptr;
     }
 };

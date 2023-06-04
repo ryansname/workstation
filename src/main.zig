@@ -98,7 +98,7 @@ pub fn main() !void {
     var clear_color = imgui.Vec4{ .x = 0.45, .y = 0.55, .z = 0.60, .w = 1.00 };
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer assert(!gpa.deinit());
+    defer assert(gpa.deinit() == .ok);
     const allocator = gpa.allocator();
 
     try gui.initTmpAllocator(allocator);
