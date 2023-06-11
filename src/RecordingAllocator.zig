@@ -48,10 +48,12 @@ fn resize(
 ) bool {
     const self = @ptrCast(*Self, @alignCast(@alignOf(Self), ctx));
 
-    self.bytes_allocated -= buf.len;
-    defer self.bytes_allocated += new_len;
-
-    return self.parent_allocator.rawResize(buf, log2_buf_align, new_len, ret_addr);
+    const result = self.parent_allocator.rawResize(buf, log2_buf_align, new_len, ret_addr);
+    if (result) {
+        self.bytes_allocated -= buf.len;
+        self.bytes_allocated += new_len;
+    }
+    return result;
 }
 
 fn free(

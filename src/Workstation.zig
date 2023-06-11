@@ -1,3 +1,4 @@
+const ADF = @import("AtlassianDocumentFormat.zig");
 const builtin = @import("builtin");
 const fs = std.fs;
 const heap = std.heap;
@@ -305,23 +306,39 @@ pub fn render(app: *Workstation, io: gui.IO) !void {
         const dynamic_issue = app.jira_store.requestIssue(mem.sliceTo(&app.buf, 0));
         switch (dynamic_issue) {
             .fetching => gui.Text2("Fetching"),
-            .data => |issue| {
+            .data => |issue| blk: {
                 gui.Text2(gui.printZ("{s}", .{jsonGet(issue.root, "fields.summary").?.string}));
-                const description = jsonGet(issue.root, "fields.description").?;
+                const description_root = jsonGet(issue.root, "fields.description").?;
+                var description = (try ADF.inflate(app.root_allocator, description_root)) orelse break :blk;
+                defer description.deinit();
                 // https://developer.atlassian.com/cloud/jira/platform/apis/document/structure/
-                gui.Text2(gui.printZ("{s}", .{if (description == .null) "No description" else if (description == .string) description.string else "Unkexpected type for description"}));
+                gui.Text2(gui.printZ("{!s}", .{(description).basicString()}));
             },
             .failed => |reason| gui.Text2(reason),
         }
 
         switch (app.jira_store.requestIssue("DAVE-1")) {
             .fetching => gui.Text2("Fetching"),
-            .data => |issue| gui.Text2(gui.printZ("{s}", .{jsonGet(issue.root, "fields.summary").?.string})),
+            .data => |issue| blk: {
+                gui.Text2(gui.printZ("{s}", .{jsonGet(issue.root, "fields.summary").?.string}));
+                const description_root = jsonGet(issue.root, "fields.description").?;
+                var description = (try ADF.inflate(app.root_allocator, description_root)) orelse break :blk;
+                defer description.deinit();
+                // https://developer.atlassian.com/cloud/jira/platform/apis/document/structure/
+                gui.Text2(gui.printZ("{!s}", .{(description).basicString()}));
+            },
             .failed => |reason| gui.Text2(reason),
         }
         switch (app.jira_store.requestIssue("DAVE-2")) {
             .fetching => gui.Text2("Fetching"),
-            .data => |issue| gui.Text2(gui.printZ("{s}", .{jsonGet(issue.root, "fields.summary").?.string})),
+            .data => |issue| blk: {
+                gui.Text2(gui.printZ("{s}", .{jsonGet(issue.root, "fields.summary").?.string}));
+                const description_root = jsonGet(issue.root, "fields.description").?;
+                var description = (try ADF.inflate(app.root_allocator, description_root)) orelse break :blk;
+                defer description.deinit();
+                // https://developer.atlassian.com/cloud/jira/platform/apis/document/structure/
+                gui.Text2(gui.printZ("{!s}", .{(description).basicString()}));
+            },
             .failed => |reason| gui.Text2(reason),
         }
     }

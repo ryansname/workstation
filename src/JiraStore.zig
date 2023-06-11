@@ -133,7 +133,10 @@ fn processJiraWork(arena: heap.ArenaAllocator, context: JiraWorkContext, work: *
 
             log.warn("Request for {s} = {any}", .{ fetch_issue.request, issue });
             fetch_issue.response = switch (issue) {
-                .unspecified => |res| .{ .failed = fmt.allocPrint(work.allocator, "Code: {}: {s}", .{ res.status_code, res.body }) catch unreachable }, // TODO LEAK
+                .unspecified => |res| blk: {
+                    log.warn("Unspecified error for request: {} - {s}", .{ res.status_code, res.body });
+                    break :blk .{ .failed = "Unspecified error code" };
+                },
                 ._200 => |res| .{ .data = res },
                 else => .{ .failed = @tagName(issue) },
             };
