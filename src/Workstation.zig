@@ -268,6 +268,20 @@ const Display = struct {
     }
 };
 
+fn jsonGet(root: std.json.Value, comptime path: []const u8) ?std.json.Value {
+    var here = root;
+    comptime var start = 0;
+    inline for (path, 0..) |c, i| switch (c) {
+        '.' => {
+            var itemPath = path[start..i];
+            here = here.object.get(itemPath).?;
+            start = i + 1;
+        },
+        else => {},
+    };
+    return here.object.get(path[start..]);
+}
+
 pub fn render(app: *Workstation, io: gui.IO) !void {
     if (!io.WantTextInput and gui.IsKeyPressed(.Q)) {
         app.exit_requested = true;
@@ -291,19 +305,23 @@ pub fn render(app: *Workstation, io: gui.IO) !void {
         const dynamic_issue = app.jira_store.requestIssue(mem.sliceTo(&app.buf, 0));
         switch (dynamic_issue) {
             .fetching => gui.Text2("Fetching"),
-            // .data => |issue| gui.Text2(gui.printZ("{s}", .{issue.get("fields").?.object.get("summary").?})),
-            .data => |issue| gui.Text2(gui.printZ("{s}", .{issue.fields.summary})),
+            .data => |issue| {
+                gui.Text2(gui.printZ("{s}", .{jsonGet(issue.root, "fields.summary").?.string}));
+                const description = jsonGet(issue.root, "fields.description").?;
+                // https://developer.atlassian.com/cloud/jira/platform/apis/document/structure/
+                gui.Text2(gui.printZ("{s}", .{if (description == .null) "No description" else if (description == .string) description.string else "Unkexpected type for description"}));
+            },
             .failed => |reason| gui.Text2(reason),
         }
 
         switch (app.jira_store.requestIssue("DAVE-1")) {
             .fetching => gui.Text2("Fetching"),
-            .data => |issue| gui.Text2(gui.printZ("{s}", .{issue.fields.summary})),
+            .data => |issue| gui.Text2(gui.printZ("{s}", .{jsonGet(issue.root, "fields.summary").?.string})),
             .failed => |reason| gui.Text2(reason),
         }
         switch (app.jira_store.requestIssue("DAVE-2")) {
             .fetching => gui.Text2("Fetching"),
-            .data => |issue| gui.Text2(gui.printZ("{s}", .{issue.fields.summary})),
+            .data => |issue| gui.Text2(gui.printZ("{s}", .{jsonGet(issue.root, "fields.summary").?.string})),
             .failed => |reason| gui.Text2(reason),
         }
     }

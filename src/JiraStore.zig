@@ -1,8 +1,10 @@
 const assert = std.debug.assert;
 const builtin = @import("builtin");
+const fmt = std.fmt;
 const fs = std.fs;
 const heap = std.heap;
 const jira = @import("jira-client");
+const json = std.json;
 const log = std.log;
 const mem = std.mem;
 const process = std.process;
@@ -23,14 +25,17 @@ worker: worker.Worker(JiraWork, JiraWorkContext, &processJiraWork),
 
 issues: StringHashMap(StoredIssue),
 
+const IssueBean = json.ValueTree;
+
 const StoredIssue = union(enum) {
     fetching: void,
     failed: []const u8,
-    data: jira.IssueBean,
+    data: IssueBean,
 
-    fn deinit(self: StoredIssue, allocator: Allocator) void {
-        switch (self) {
-            .data => |d| d.deinit(allocator),
+    fn deinit(self: *StoredIssue, allocator: Allocator) void {
+        _ = allocator;
+        switch (self.*) {
+            .data => |*d| d.deinit(),
             else => {},
         }
     }
@@ -128,6 +133,7 @@ fn processJiraWork(arena: heap.ArenaAllocator, context: JiraWorkContext, work: *
 
             log.warn("Request for {s} = {any}", .{ fetch_issue.request, issue });
             fetch_issue.response = switch (issue) {
+                .unspecified => |res| .{ .failed = fmt.allocPrint(work.allocator, "Code: {}: {s}", .{ res.status_code, res.body }) catch unreachable }, // TODO LEAK
                 ._200 => |res| .{ .data = res },
                 else => .{ .failed = @tagName(issue) },
             };

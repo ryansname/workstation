@@ -1,0 +1,10 @@
+.{
+    .name = "workstation",
+    .version = "0.0.1",
+    .dependencies = .{
+        .@"jira-client" = .{
+            .url = "https://github.com/ryansname/zig-jira-client/archive/4a06c03/main.tar.gz",
+            .hash = "12209b6b2d74db9249bd50c12ff6ac9443f6fdce6bf5646e0bc1543d9b881f18e7e5",
+        },
+    },
+}
