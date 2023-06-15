@@ -37,9 +37,12 @@ pub fn basicString(self: *Self) ![]const u8 {
 
 // This is not the best way to do this, but it is *A* way.
 fn basicStringRecurse(writer: anytype, node: Node, nest: u32) !void {
-    try writer.writeByteNTimes('\t', nest);
+    try writer.writeByteNTimes(' ', nest * 2);
     switch (node) {
-        .blockquote => {},
+        .blockquote => |blockquote| {
+            try writer.print("Blockquote\n", .{});
+            for (blockquote.content.items) |c| try basicStringRecurse(writer, c, nest + 1);
+        },
         .bulletList => {},
         .codeBlock => {},
         .doc => |doc| {
@@ -75,8 +78,33 @@ fn basicStringRecurse(writer: anytype, node: Node, nest: u32) !void {
     }
 }
 
+const FromValueError = MalformedNode || error{OutOfMemory};
+const MalformedNode = error{ NodeIsWrongType, MissingRequiredField, UnknownNodeType, UnknownPanelType };
+
+fn parseContent(
+    comptime contentRequired: bool,
+    alloc: Allocator,
+    value_obj: std.json.ObjectMap,
+) FromValueError!if (contentRequired) ArrayList(Node) else ?ArrayList(Node) {
+    if (value_obj.get("content")) |raw_content| switch (raw_content) {
+        .array => |raw_content_array| {
+            var content = try ArrayList(Node).initCapacity(alloc, raw_content_array.items.len);
+            errdefer content.deinit(alloc);
+
+            for (raw_content_array.items) |raw| {
+                content.appendAssumeCapacity(try Node.fromValue(alloc, raw));
+            }
+
+            return content;
+        },
+        else => return error.NodeIsWrongType,
+    } else if (contentRequired) {
+        return error.MissingRequiredField;
+    } else return null;
+}
+
 const Node = union(enum) {
-    blockquote,
+    blockquote: struct { content: ArrayList(Node) },
     bulletList,
     codeBlock,
     doc: struct { content: ArrayList(Node), version: i64 },
@@ -99,16 +127,18 @@ const Node = union(enum) {
     tableRow,
     text: struct { text: []const u8, marks: []const Mark },
 
-    fn fromValue(alloc: Allocator, value: std.json.Value) !Node {
-        if (value != .object) return error.MalformedNode;
+    fn fromValue(alloc: Allocator, value: std.json.Value) FromValueError!Node {
+        if (value != .object) return error.NodeIsWrongType;
         const value_obj = value.object;
-        const ty = value_obj.get("type") orelse return error.MalformedNode;
-        if (ty != .string) return error.MalformedNode;
+        const ty = value_obj.get("type") orelse return error.MissingRequiredField;
+        if (ty != .string) return error.NodeIsWrongType;
 
-        // var node_type = std.meta.stringToEnum(NodeType, ty.string) orelse return error.MalformedNode;
-        var node_type = std.meta.stringToEnum(@typeInfo(Node).Union.tag_type.?, ty.string) orelse return error.MalformedNode;
+        var node_type = std.meta.stringToEnum(@typeInfo(Node).Union.tag_type.?, ty.string) orelse return error.UnknownNodeType;
 
         switch (node_type) {
+            .blockquote => {
+                return .{ .blockquote = .{ .content = try parseContent(true, alloc, value_obj) } };
+            },
             .doc => {
                 const raw_content = value_obj.get("content").?.array; // TODO: Safely
                 var content = try ArrayList(Node).initCapacity(alloc, raw_content.items.len);
@@ -142,17 +172,9 @@ const Node = union(enum) {
                     },
                 };
             },
-            .paragraph => if (value_obj.get("content")) |raw_content| {
-                const raw_content_array = raw_content.array; // TODO: Safely
-                var content = try ArrayList(Node).initCapacity(alloc, raw_content_array.items.len);
-                errdefer content.deinit(alloc);
-
-                for (raw_content_array.items) |raw| {
-                    content.appendAssumeCapacity(try Node.fromValue(alloc, raw));
-                }
-
-                return .{ .paragraph = .{ .content = content } };
-            } else return .{ .paragraph = .{ .content = ArrayList(Node){} } },
+            .paragraph => {
+                return .{ .paragraph = .{ .content = try parseContent(false, alloc, value_obj) } };
+            },
             .text => {
                 return .{ .text = .{ .text = value_obj.get("text").?.string, .marks = &[0]Mark{} } }; //TODO: Safely + marks field
             },
