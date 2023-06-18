@@ -283,6 +283,81 @@ fn jsonGet(root: std.json.Value, comptime path: []const u8) ?std.json.Value {
     return here.object.get(path[start..]);
 }
 
+// TODO:
+//   There's too many new lines, like between repeat emoji
+//   Probably need to introduce a simple context
+//   Understand the difference between block and inline elements
+fn renderAdf(node: ADF.Node) void {
+    switch (node) {
+        .blockquote => |quote| {
+            for (quote.content.items) |i| {
+                gui.Text2("> ");
+                gui.SameLine();
+                renderAdf(i);
+            }
+        },
+        .bulletList => |list| {
+            gui.Indent(); //TODO: It'd be nicer to not indent the first bullets
+            defer gui.Unindent();
+            for (list.content.items) |li| {
+                gui.Bullet();
+                renderAdf(li);
+            }
+        },
+        .codeBlock => |code_block| {
+            gui.Indent();
+            defer gui.Unindent();
+
+            for (code_block.content.items) |i| renderAdf(i);
+        },
+        .doc => |doc| for (doc.content.items) |i| renderAdf(i),
+        .emoji => |emoji| {
+            gui.Text2(emoji.text orelse emoji.short_name);
+        },
+        .hardBreak => gui.Text2(""),
+        .heading => |heading| if (heading.content) |content| {
+            gui.TextFmt("h{}", .{heading.level});
+            if (content.items.len > 0) gui.SameLine(); // TODO: This feels terrible
+            for (content.items) |i| renderAdf(i);
+        },
+        .inlineCard => |card| {
+            // TODO: this is terrible :(, each card will need to be special cased
+            switch (card.url_or_data) {
+                .url => |url| gui.Text2(url),
+                .data => gui.Text2("Unsupported data card."),
+            }
+        },
+        .listItem => |li| for (li.content.items) |i| renderAdf(i),
+        .media => @panic("This tag is not supported!"),
+        .mediaGroup => @panic("This tag is not supported!"),
+        .mediaSingle => @panic("This tag is not supported!"),
+        .mention => |mention| {
+            gui.Text2(mention.text orelse mention.id);
+        },
+        .orderedList => |list| {
+            gui.Indent(); //TODO: It'd be nicer to not indent the first bullets
+            defer gui.Unindent();
+            for (list.content.items, 1..) |li, i| {
+                gui.TextFmt("{}.", .{i});
+                gui.SameLine();
+                renderAdf(li);
+            }
+        },
+        .panel => |panel| {
+            gui.TextFmt("{s:-^49}", .{@tagName(panel.panel_type)});
+            for (panel.content.items) |i| renderAdf(i);
+            gui.TextFmt("-" ** 49, .{});
+        },
+        .paragraph => |paragraph| if (paragraph.content) |content| for (content.items) |i| renderAdf(i),
+        .rule => gui.Separator(),
+        .table => @panic("This tag is not supported!"),
+        .tableCell => @panic("This tag is not supported!"),
+        .tableHeader => @panic("This tag is not supported!"),
+        .tableRow => @panic("This tag is not supported!"),
+        .text => |text| gui.Text2(text.text), // TODO: text.marks
+    }
+}
+
 pub fn render(app: *Workstation, io: gui.IO) !void {
     if (!io.WantTextInput and gui.IsKeyPressed(.Q)) {
         app.exit_requested = true;
@@ -317,8 +392,7 @@ pub fn render(app: *Workstation, io: gui.IO) !void {
                     break :blk;
                 }) orelse break :blk;
                 defer description.deinit();
-                // https://developer.atlassian.com/cloud/jira/platform/apis/document/structure/
-                gui.Text2(gui.printZ("{!s}", .{(description).basicString()}));
+                renderAdf(description.root);
             },
             .failed => |reason| gui.Text2(reason),
         }
@@ -336,8 +410,7 @@ pub fn render(app: *Workstation, io: gui.IO) !void {
                     break :blk;
                 }) orelse break :blk;
                 defer description.deinit();
-                // https://developer.atlassian.com/cloud/jira/platform/apis/document/structure/
-                gui.Text2(gui.printZ("{!s}", .{(description).basicString()}));
+                renderAdf(description.root);
             },
             .failed => |reason| gui.Text2(reason),
         }
@@ -354,8 +427,7 @@ pub fn render(app: *Workstation, io: gui.IO) !void {
                     break :blk;
                 }) orelse break :blk;
                 defer description.deinit();
-                // https://developer.atlassian.com/cloud/jira/platform/apis/document/structure/
-                gui.Text2(gui.printZ("{!s}", .{(description).basicString()}));
+                renderAdf(description.root);
             },
             .failed => |reason| gui.Text2(reason),
         }

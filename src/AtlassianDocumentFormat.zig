@@ -153,7 +153,7 @@ fn getAttrs(
     } else null;
 }
 
-const Node = union(enum) {
+pub const Node = union(enum) {
     blockquote: struct { content: ArrayList(Node) },
     bulletList: struct { content: ArrayList(Node) },
     codeBlock: struct { content: ArrayList(Node), language: ?[]const u8 },
