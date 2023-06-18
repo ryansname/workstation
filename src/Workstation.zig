@@ -309,7 +309,13 @@ pub fn render(app: *Workstation, io: gui.IO) !void {
             .data => |issue| blk: {
                 gui.Text2(gui.printZ("{s}", .{jsonGet(issue.root, "fields.summary").?.string}));
                 const description_root = jsonGet(issue.root, "fields.description").?;
-                var description = (try ADF.inflate(app.root_allocator, description_root)) orelse break :blk;
+                var description = (ADF.inflate(app.root_allocator, description_root) catch |err| {
+                    gui.Text2(gui.printZ("Error occurred: {s}", .{@errorName(err)}));
+                    if (@errorReturnTrace() != null) {
+                        return err;
+                    }
+                    break :blk;
+                }) orelse break :blk;
                 defer description.deinit();
                 // https://developer.atlassian.com/cloud/jira/platform/apis/document/structure/
                 gui.Text2(gui.printZ("{!s}", .{(description).basicString()}));
@@ -322,7 +328,13 @@ pub fn render(app: *Workstation, io: gui.IO) !void {
             .data => |issue| blk: {
                 gui.Text2(gui.printZ("{s}", .{jsonGet(issue.root, "fields.summary").?.string}));
                 const description_root = jsonGet(issue.root, "fields.description").?;
-                var description = (try ADF.inflate(app.root_allocator, description_root)) orelse break :blk;
+                var description = (ADF.inflate(app.root_allocator, description_root) catch |err| {
+                    gui.Text2(gui.printZ("Error occurred: {s}", .{@errorName(err)}));
+                    if (@errorReturnTrace() != null) {
+                        return err;
+                    }
+                    break :blk;
+                }) orelse break :blk;
                 defer description.deinit();
                 // https://developer.atlassian.com/cloud/jira/platform/apis/document/structure/
                 gui.Text2(gui.printZ("{!s}", .{(description).basicString()}));
@@ -334,7 +346,13 @@ pub fn render(app: *Workstation, io: gui.IO) !void {
             .data => |issue| blk: {
                 gui.Text2(gui.printZ("{s}", .{jsonGet(issue.root, "fields.summary").?.string}));
                 const description_root = jsonGet(issue.root, "fields.description").?;
-                var description = (try ADF.inflate(app.root_allocator, description_root)) orelse break :blk;
+                var description = (ADF.inflate(app.root_allocator, description_root) catch |err| {
+                    gui.Text2(gui.printZ("Error occurred: {s}", .{@errorName(err)}));
+                    if (@errorReturnTrace() != null) {
+                        return err;
+                    }
+                    break :blk;
+                }) orelse break :blk;
                 defer description.deinit();
                 // https://developer.atlassian.com/cloud/jira/platform/apis/document/structure/
                 gui.Text2(gui.printZ("{!s}", .{(description).basicString()}));
