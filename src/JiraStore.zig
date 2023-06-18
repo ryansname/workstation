@@ -20,6 +20,7 @@ const JiraStore = @This();
 
 allocator: Allocator,
 
+url_root: []const u8,
 client: jira.Client,
 worker: worker.Worker(JiraWork, JiraWorkContext, &processJiraWork),
 
@@ -53,10 +54,12 @@ const JiraWork = struct {
     },
 };
 
-pub fn init(allocator: Allocator) !JiraStore {
+pub fn init(allocator: Allocator, url_root_in: []const u8) !JiraStore {
+    const url_root = try allocator.dupe(u8, url_root_in);
     var store = JiraStore{
         .allocator = allocator,
-        .client = try jira.Client.init("https://jira.com"),
+        .url_root = url_root,
+        .client = try jira.Client.init(url_root),
         .worker = .{ .allocator = allocator },
         .issues = StringHashMap(StoredIssue){},
     };
@@ -66,6 +69,7 @@ pub fn init(allocator: Allocator) !JiraStore {
 }
 
 pub fn deinit(store: *JiraStore) void {
+    store.allocator.free(store.url_root);
     store.worker.deinit();
 
     store.client.deinit(store.allocator);

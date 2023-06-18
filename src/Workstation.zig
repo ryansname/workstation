@@ -46,8 +46,12 @@ pub fn init(input_allocator: Allocator) !*Workstation {
 
     app.default_display = Display.init(alloc, "Branches", .{ .branches = .{} });
 
-    app.jira_store = try JiraStore.init(app.root_allocator);
+    const url_root = try process.getEnvVarOwned(alloc, "WORKSTATION_URL_ROOT");
+    defer alloc.free(url_root);
+
+    app.jira_store = try JiraStore.init(app.root_allocator, url_root);
     errdefer app.jira_store.deinit();
+
     if (process.getEnvVarOwned(alloc, "WORKSTATION_USERNAME")) |username| {
         defer alloc.free(username);
         if (process.getEnvVarOwned(alloc, "WORKSTATION_PASSWORD")) |password| {
