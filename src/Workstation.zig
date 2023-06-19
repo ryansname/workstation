@@ -319,6 +319,11 @@ fn renderAdf(node: ADF.Node) void {
         .emoji => |emoji| {
             gui.Text2(emoji.text orelse emoji.short_name);
         },
+        .expand => |expand| {
+            if (gui.CollapsingHeader_BoolPtr(gui.dupeZ(expand.title orelse ""), null)) {
+                for (expand.content.items) |i| renderAdf(i);
+            }
+        },
         .hardBreak => gui.Text2(""),
         .heading => |heading| if (heading.content) |content| {
             gui.TextFmt("h{}", .{heading.level});

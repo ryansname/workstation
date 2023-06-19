@@ -161,6 +161,7 @@ pub const Node = union(enum) {
     codeBlock: struct { content: ArrayList(Node), language: ?[]const u8 },
     doc: struct { content: ArrayList(Node), version: i64 },
     emoji: struct { id: ?[]const u8, short_name: []const u8, text: ?[]const u8 },
+    expand: struct { content: ArrayList(Node), title: ?[]const u8 },
     hardBreak,
     heading: struct { content: ?ArrayList(Node), level: u3 },
     inlineCard: struct { url_or_data: union(enum) { url: []const u8, data: void } },
@@ -230,6 +231,15 @@ pub const Node = union(enum) {
                     .short_name = short_name,
                     .text = text,
                 } };
+            },
+            .expand => {
+                const attrs = (try getAttrs(value_obj)) orelse return error.MissingRequiredField;
+                const title = if (attrs.get("title")) |title| switch (title) {
+                    .string => |str| str,
+                    else => return error.NodeIsWrongType,
+                } else null;
+                const content = try parseContent(true, alloc, value_obj);
+                return .{ .expand = .{ .content = content, .title = title } };
             },
             .hardBreak => return .{ .hardBreak = {} },
             .heading => {
