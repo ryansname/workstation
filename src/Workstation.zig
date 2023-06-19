@@ -333,9 +333,9 @@ fn renderAdf(node: ADF.Node) void {
             }
         },
         .listItem => |li| for (li.content.items) |i| renderAdf(i),
-        .media => @panic("This tag is not supported!"),
-        .mediaGroup => @panic("This tag is not supported!"),
-        .mediaSingle => @panic("This tag is not supported!"),
+        .media => gui.Text2("There's some media here"),
+        .mediaGroup => |group| for (group.content.items) |i| renderAdf(i),
+        .mediaSingle => gui.Text2("There's some media here"),
         .mention => |mention| {
             gui.Text2(mention.text orelse mention.id);
         },
