@@ -120,7 +120,7 @@ fn basicStringRecurse(writer: anytype, node: Node, nest: u32) !void {
 }
 
 const FromValueError = MalformedNode || error{OutOfMemory};
-const MalformedNode = error{ NodeIsWrongType, MissingRequiredField, UnknownNodeType, UnknownPanelType };
+const MalformedNode = error{ NodeIsWrongType, MissingRequiredField, UnknownEnumVariant, UnknownNodeType, UnknownPanelType };
 
 fn parseContent(
     comptime contentRequired: bool,
@@ -154,6 +154,8 @@ fn getAttrs(
 }
 
 pub const Node = union(enum) {
+    const StatusColor = enum { neutral, purple, blue, red, yellow, green };
+
     blockquote: struct { content: ArrayList(Node) },
     bulletList: struct { content: ArrayList(Node) },
     codeBlock: struct { content: ArrayList(Node), language: ?[]const u8 },
@@ -171,6 +173,7 @@ pub const Node = union(enum) {
     panel: struct { content: ArrayList(Node), panel_type: PanelType },
     paragraph: struct { content: ?ArrayList(Node) },
     rule,
+    status: struct { text: []const u8, color: StatusColor },
     table,
     tableCell,
     tableHeader,
@@ -319,6 +322,22 @@ pub const Node = union(enum) {
             },
             .rule => {
                 return .{ .rule = {} };
+            },
+            .status => {
+                const attrs = (try getAttrs(value_obj)) orelse return error.MissingRequiredField;
+
+                const text = if (attrs.get("text")) |text| switch (text) {
+                    .string => text.string,
+                    else => return error.NodeIsWrongType,
+                } else return error.MissingRequiredField;
+
+                const color_str = if (attrs.get("color")) |color| switch (color) {
+                    .string => color.string,
+                    else => return error.NodeIsWrongType,
+                } else return error.MissingRequiredField;
+                const color = std.meta.stringToEnum(StatusColor, color_str) orelse return error.UnknownEnumVariant;
+
+                return .{ .status = .{ .text = text, .color = color } };
             },
             .table => {
                 return .{ .table = {} }; // TODO: Support tables!

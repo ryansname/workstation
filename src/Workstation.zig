@@ -355,6 +355,7 @@ fn renderAdf(node: ADF.Node) void {
         },
         .paragraph => |paragraph| if (paragraph.content) |content| for (content.items) |i| renderAdf(i),
         .rule => gui.Separator(),
+        .status => |status| gui.TextFmt("<{[color]s}>{[text]s}</{[color]s}>", .{ .color = @tagName(status.color), .text = status.text }),
         .table => @panic("This tag is not supported!"),
         .tableCell => @panic("This tag is not supported!"),
         .tableHeader => @panic("This tag is not supported!"),
