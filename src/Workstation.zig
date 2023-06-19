@@ -391,7 +391,7 @@ pub fn render(app: *Workstation, io: gui.IO) !void {
                 const description_root = jsonGet(issue.root, "fields.description").?;
                 var description = (ADF.inflate(app.root_allocator, description_root) catch |err| {
                     gui.Text2(gui.printZ("Error occurred: {s}", .{@errorName(err)}));
-                    if (@errorReturnTrace() != null) {
+                    if (gui.Button("Crash due to error")) {
                         return err;
                     }
                     break :blk;
