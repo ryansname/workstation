@@ -42,6 +42,7 @@ pub fn init(input_allocator: Allocator) !*Workstation {
         .root_allocator = app.recording_allocator.allocator(),
         .jira_store = undefined,
     };
+    @memcpy(app.buf[0..6], "DAVE-1");
     const alloc = app.root_allocator;
 
     app.default_display = Display.init(alloc, "Branches", .{ .branches = .{} });
@@ -384,41 +385,6 @@ pub fn render(app: *Workstation, io: gui.IO) !void {
 
         const dynamic_issue = app.jira_store.requestIssue(mem.sliceTo(&app.buf, 0));
         switch (dynamic_issue) {
-            .fetching => gui.Text2("Fetching"),
-            .data => |issue| blk: {
-                gui.Text2(gui.printZ("{s}", .{jsonGet(issue.root, "fields.summary").?.string}));
-                const description_root = jsonGet(issue.root, "fields.description").?;
-                var description = (ADF.inflate(app.root_allocator, description_root) catch |err| {
-                    gui.Text2(gui.printZ("Error occurred: {s}", .{@errorName(err)}));
-                    if (@errorReturnTrace() != null) {
-                        return err;
-                    }
-                    break :blk;
-                }) orelse break :blk;
-                defer description.deinit();
-                renderAdf(description.root);
-            },
-            .failed => |reason| gui.Text2(reason),
-        }
-
-        switch (app.jira_store.requestIssue("DAVE-1")) {
-            .fetching => gui.Text2("Fetching"),
-            .data => |issue| blk: {
-                gui.Text2(gui.printZ("{s}", .{jsonGet(issue.root, "fields.summary").?.string}));
-                const description_root = jsonGet(issue.root, "fields.description").?;
-                var description = (ADF.inflate(app.root_allocator, description_root) catch |err| {
-                    gui.Text2(gui.printZ("Error occurred: {s}", .{@errorName(err)}));
-                    if (@errorReturnTrace() != null) {
-                        return err;
-                    }
-                    break :blk;
-                }) orelse break :blk;
-                defer description.deinit();
-                renderAdf(description.root);
-            },
-            .failed => |reason| gui.Text2(reason),
-        }
-        switch (app.jira_store.requestIssue("DAVE-2")) {
             .fetching => gui.Text2("Fetching"),
             .data => |issue| blk: {
                 gui.Text2(gui.printZ("{s}", .{jsonGet(issue.root, "fields.summary").?.string}));
