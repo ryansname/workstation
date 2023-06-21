@@ -33,6 +33,9 @@ default_display: ?Display = null,
 
 buf: [64]u8 = [_]u8{0} ** 64,
 
+mono_13: *gui.Font = undefined,
+mono_20: *gui.Font = undefined,
+
 pub fn init(input_allocator: Allocator) !*Workstation {
     var app = try input_allocator.create(Workstation);
     errdefer input_allocator.destroy(app);
@@ -292,13 +295,13 @@ fn jsonGet(root: std.json.Value, comptime path: []const u8) ?std.json.Value {
 //   There's too many new lines, like between repeat emoji
 //   Probably need to introduce a simple context
 //   Understand the difference between block and inline elements
-fn renderAdf(node: ADF.Node) void {
+fn renderAdf(app: Workstation, node: ADF.Node) void {
     switch (node) {
         .blockquote => |quote| {
             for (quote.content.items) |i| {
                 gui.Text2("> ");
                 gui.SameLine();
-                renderAdf(i);
+                renderAdf(app, i);
             }
         },
         .bulletList => |list| {
@@ -306,29 +309,32 @@ fn renderAdf(node: ADF.Node) void {
             defer gui.Unindent();
             for (list.content.items) |li| {
                 gui.Bullet();
-                renderAdf(li);
+                renderAdf(app, li);
             }
         },
         .codeBlock => |code_block| {
             gui.Indent();
             defer gui.Unindent();
 
-            for (code_block.content.items) |i| renderAdf(i);
+            for (code_block.content.items) |i| renderAdf(app, i);
         },
-        .doc => |doc| for (doc.content.items) |i| renderAdf(i),
+        .doc => |doc| for (doc.content.items) |i| renderAdf(app, i),
         .emoji => |emoji| {
             gui.Text2(emoji.text orelse emoji.short_name);
         },
         .expand => |expand| {
             if (gui.CollapsingHeader_BoolPtr(gui.dupeZ(expand.title orelse ""), null)) {
-                for (expand.content.items) |i| renderAdf(i);
+                for (expand.content.items) |i| renderAdf(app, i);
             }
         },
         .hardBreak => gui.Text2(""),
         .heading => |heading| if (heading.content) |content| {
+            gui.PushFont(app.mono_20);
+            defer gui.PopFont();
+
             gui.TextFmt("h{}", .{heading.level});
             if (content.items.len > 0) gui.SameLine(); // TODO: This feels terrible
-            for (content.items) |i| renderAdf(i);
+            for (content.items) |i| renderAdf(app, i);
         },
         .inlineCard => |card| {
             // TODO: this is terrible :(, each card will need to be special cased
@@ -337,9 +343,9 @@ fn renderAdf(node: ADF.Node) void {
                 .data => gui.Text2("Unsupported data card."),
             }
         },
-        .listItem => |li| for (li.content.items) |i| renderAdf(i),
+        .listItem => |li| for (li.content.items) |i| renderAdf(app, i),
         .media => gui.Text2("There's some media here"),
-        .mediaGroup => |group| for (group.content.items) |i| renderAdf(i),
+        .mediaGroup => |group| for (group.content.items) |i| renderAdf(app, i),
         .mediaSingle => gui.Text2("There's some media here"),
         .mention => |mention| {
             gui.Text2(mention.text orelse mention.id);
@@ -350,15 +356,15 @@ fn renderAdf(node: ADF.Node) void {
             for (list.content.items, 1..) |li, i| {
                 gui.TextFmt("{}.", .{i});
                 gui.SameLine();
-                renderAdf(li);
+                renderAdf(app, li);
             }
         },
         .panel => |panel| {
             gui.TextFmt("{s:-^49}", .{@tagName(panel.panel_type)});
-            for (panel.content.items) |i| renderAdf(i);
+            for (panel.content.items) |i| renderAdf(app, i);
             gui.TextFmt("-" ** 49, .{});
         },
-        .paragraph => |paragraph| if (paragraph.content) |content| for (content.items) |i| renderAdf(i),
+        .paragraph => |paragraph| if (paragraph.content) |content| for (content.items) |i| renderAdf(app, i),
         .rule => gui.Separator(),
         .status => |status| gui.TextFmt("<{[color]s}>{[text]s}</{[color]s}>", .{ .color = @tagName(status.color), .text = status.text }),
         .table => @panic("This tag is not supported!"),
@@ -403,7 +409,7 @@ pub fn render(app: *Workstation, io: gui.IO) !void {
                     break :blk;
                 }) orelse break :blk;
                 defer description.deinit();
-                renderAdf(description.root);
+                renderAdf(app.*, description.root);
             },
             .failed => |reason| gui.Text2(reason),
         }

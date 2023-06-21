@@ -83,7 +83,8 @@ pub fn main() !void {
     font_config.FontDataOwnedByAtlas = false; // In static memory, so it cannot be freed
 
     const font_data = @embedFile("fonts/Hack-Regular.ttf");
-    assert(io.Fonts.?.AddFontFromMemoryTTFExt(@intToPtr(*u8, @ptrToInt(font_data)), font_data.len, 13.0, &font_config, null) != null);
+    const mono_13 = (io.Fonts.?.AddFontFromMemoryTTFExt(@intToPtr(*u8, @ptrToInt(font_data)), font_data.len, 13.0, &font_config, null)).?; // TODO: unsafe font load?
+    const mono_20 = (io.Fonts.?.AddFontFromMemoryTTFExt(@intToPtr(*u8, @ptrToInt(font_data)), font_data.len, 20.0, &font_config, null)).?;
     _ = io.Fonts.?.AddFontDefault();
 
     //io.Fonts.AddFontFromFileTTF("../../misc/fonts/Roboto-Medium.ttf", 16.0);
@@ -106,6 +107,9 @@ pub fn main() !void {
 
     var app = try Workstation.init(allocator);
     defer app.deinit(allocator);
+
+    app.mono_13 = mono_13;
+    app.mono_20 = mono_20;
 
     try app.start_workers();
 
