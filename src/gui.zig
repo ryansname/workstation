@@ -7,6 +7,9 @@ const imgui = @import("imgui");
 pub usingnamespace imgui;
 
 pub inline fn Text2(text: anytype) void {
+    imgui.PushTextWrapPos();
+    defer imgui.PopTextWrapPos();
+
     const type_info = @typeInfo(@TypeOf(text));
     if (type_info == .Pointer and @typeInfo(type_info.Pointer.child) == .Array) {
         const text_start: [*]const u8 = &text.*;
