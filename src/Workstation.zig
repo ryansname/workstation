@@ -360,9 +360,25 @@ fn renderAdf(app: Workstation, node: ADF.Node) void {
             }
         },
         .panel => |panel| {
-            gui.TextFmt("{s:-^49}", .{@tagName(panel.panel_type)});
-            for (panel.content.items) |i| renderAdf(app, i);
-            gui.TextFmt("-" ** 49, .{});
+            gui.PushStyleVar_Vec2(gui.StyleVar.CellPadding, .{ .x = 5, .y = 5 });
+            defer gui.PopStyleVar();
+
+            if (gui.BeginTableExt("panel", 1, .{}, .{}, 0)) {
+                defer gui.EndTable();
+
+                gui.TableNextRow();
+                _ = gui.TableNextColumn();
+
+                const color: gui.Vec4 = switch (panel.panel_type) {
+                    .info => gui.COLOR_INFO,
+                    .note => gui.COLOR_NOTE,
+                    .warning => gui.COLOR_WARNING,
+                    .success => gui.COLOR_SUCCESS,
+                    .@"error" => gui.COLOR_ERROR,
+                };
+                gui.TableSetBgColor(gui.TableBgTarget.RowBg0, gui.GetColorU32_Vec4(color));
+                for (panel.content.items) |i| renderAdf(app, i);
+            }
         },
         .paragraph => |paragraph| if (paragraph.content) |content| for (content.items) |i| renderAdf(app, i),
         .rule => gui.Separator(),

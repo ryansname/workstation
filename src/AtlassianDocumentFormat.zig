@@ -381,4 +381,4 @@ const Mark = union(enum) {
     underline,
 };
 
-const PanelType = enum { info, note, warning, success, errorPanel };
+const PanelType = enum { info, note, warning, success, @"error" };

@@ -6,6 +6,12 @@ const imgui = @import("imgui");
 
 pub usingnamespace imgui;
 
+pub const COLOR_INFO = .{ .x = 0.000, .y = 0.388, .z = 0.663, .w = 0.796 };
+pub const COLOR_NOTE = .{ .x = 0.859, .y = 0.473, .z = 0.972, .w = 0.552 };
+pub const COLOR_WARNING = .{ .x = 0.972, .y = 0.821, .z = 0.473, .w = 0.552 };
+pub const COLOR_SUCCESS = .{ .x = 0.511, .y = 0.972, .z = 0.473, .w = 0.552 };
+pub const COLOR_ERROR = .{ .x = 0.972, .y = 0.473, .z = 0.473, .w = 0.552 };
+
 pub inline fn Text2(text: anytype) void {
     imgui.PushTextWrapPos();
     defer imgui.PopTextWrapPos();
