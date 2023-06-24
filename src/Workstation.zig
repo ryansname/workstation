@@ -377,6 +377,10 @@ fn renderAdf(app: Workstation, node: ADF.Node) void {
                     .@"error" => gui.COLOR_ERROR,
                 };
                 gui.TableSetBgColor(gui.TableBgTarget.RowBg0, gui.GetColorU32_Vec4(color));
+
+                gui.Indent();
+                defer gui.Unindent();
+
                 for (panel.content.items) |i| renderAdf(app, i);
             }
         },
