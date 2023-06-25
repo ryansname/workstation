@@ -409,6 +409,8 @@ pub fn render(app: *Workstation, io: gui.IO) !void {
         return;
     }
 
+    const focus_search = !io.WantTextInput and gui.IsKeyPressed(.Slash);
+
     var branches_open = true;
     var visible = gui.BeginExt("Branches", &branches_open, .{});
     if (visible) {
@@ -419,6 +421,7 @@ pub fn render(app: *Workstation, io: gui.IO) !void {
     var view_open_2 = true;
     var visible_2 = gui.BeginExt("Issue", &view_open_2, .{});
     if (visible_2) {
+        if (focus_search) gui.SetKeyboardFocusHere();
         _ = gui.InputText("Issue Key", &app.buf, app.buf.len);
         const ticket_id = mem.sliceTo(&app.buf, 0);
 
@@ -426,7 +429,7 @@ pub fn render(app: *Workstation, io: gui.IO) !void {
         if (changed) {
             try app.visible_tickets.append(
                 app.root_allocator,
-                try app.root_allocator.dupe(u8, ticket_id),
+                try std.ascii.allocUpperString(app.root_allocator, ticket_id),
             );
         }
     }
