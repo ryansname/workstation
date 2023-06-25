@@ -28,6 +28,13 @@ pub fn deinit(self: Self) void {
     self.arena.deinit();
 }
 
+pub fn isInline(node: Node) bool {
+    return switch (node) {
+        .emoji, .hardBreak, .inlineCard, .listItem, .mention, .text => true,
+        else => false,
+    };
+}
+
 pub fn basicString(self: *Self) ![]const u8 {
     var buffer = ArrayList(u8){};
     var writer = buffer.writer(self.arena.allocator());

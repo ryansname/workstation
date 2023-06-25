@@ -291,11 +291,10 @@ fn jsonGet(root: std.json.Value, comptime path: []const u8) ?std.json.Value {
     return here.object.get(path[start..]);
 }
 
-// TODO:
-//   There's too many new lines, like between repeat emoji
-//   Probably need to introduce a simple context
-//   Understand the difference between block and inline elements
 fn renderAdf(app: Workstation, node: ADF.Node) void {
+    if (ADF.isInline(node)) {
+        gui.SameLine();
+    }
     switch (node) {
         .blockquote => |quote| {
             for (quote.content.items) |i| {
@@ -316,6 +315,7 @@ fn renderAdf(app: Workstation, node: ADF.Node) void {
             gui.Indent();
             defer gui.Unindent();
 
+            gui.NewLine();
             for (code_block.content.items) |i| renderAdf(app, i);
         },
         .doc => |doc| for (doc.content.items) |i| renderAdf(app, i),
@@ -384,7 +384,10 @@ fn renderAdf(app: Workstation, node: ADF.Node) void {
                 for (panel.content.items) |i| renderAdf(app, i);
             }
         },
-        .paragraph => |paragraph| if (paragraph.content) |content| for (content.items) |i| renderAdf(app, i),
+        .paragraph => |paragraph| {
+            gui.NewLine();
+            if (paragraph.content) |content| for (content.items) |i| renderAdf(app, i);
+        },
         .rule => gui.Separator(),
         .status => |status| gui.TextFmt("<{[color]s}>{[text]s}</{[color]s}>", .{ .color = @tagName(status.color), .text = status.text }),
         .table => @panic("This tag is not supported!"),
