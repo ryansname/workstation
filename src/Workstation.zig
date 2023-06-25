@@ -31,6 +31,7 @@ work: std.BoundedArray(Work, 32) = .{},
 
 default_display: ?Display = null,
 
+visible_tickets: ArrayList([]const u8) = .{},
 buf: [64]u8 = [_]u8{0} ** 64,
 
 mono_13: *gui.Font = undefined,
@@ -45,8 +46,9 @@ pub fn init(input_allocator: Allocator) !*Workstation {
         .root_allocator = app.recording_allocator.allocator(),
         .jira_store = undefined,
     };
-    @memcpy(app.buf[0..6], "DAVE-1");
     const alloc = app.root_allocator;
+
+    try app.visible_tickets.append(alloc, try alloc.dupe(u8, "DAVE-1"));
 
     app.default_display = Display.init(alloc, "Branches", .{ .branches = .{} });
 
@@ -88,6 +90,9 @@ pub fn init(input_allocator: Allocator) !*Workstation {
 pub fn deinit(app: *Workstation, input_allocator: Allocator) void {
     if (app.default_display) |d| d.deinit();
     app.jira_store.deinit();
+
+    for (app.visible_tickets.items) |item| app.root_allocator.free(item);
+    app.visible_tickets.deinit(app.root_allocator);
 
     input_allocator.destroy(app);
 }
@@ -404,8 +409,8 @@ pub fn render(app: *Workstation, io: gui.IO) !void {
         return;
     }
 
-    var view_open = true;
-    var visible = gui.BeginExt("Branches", &view_open, .{});
+    var branches_open = true;
+    var visible = gui.BeginExt("Branches", &branches_open, .{});
     if (visible) {
         if (app.default_display) |*d| try d.render(app);
     }
@@ -415,29 +420,50 @@ pub fn render(app: *Workstation, io: gui.IO) !void {
     var visible_2 = gui.BeginExt("Issue", &view_open_2, .{});
     if (visible_2) {
         _ = gui.InputText("Issue Key", &app.buf, app.buf.len);
-        const changed = gui.IsItemDeactivatedAfterEdit();
-        _ = changed;
+        const ticket_id = mem.sliceTo(&app.buf, 0);
 
-        const dynamic_issue = app.jira_store.requestIssue(mem.sliceTo(&app.buf, 0));
-        switch (dynamic_issue) {
-            .fetching => gui.Text2("Fetching"),
-            .data => |issue| blk: {
-                gui.Text2(gui.printZ("{s}", .{jsonGet(issue.root, "fields.summary").?.string}));
-                const description_root = jsonGet(issue.root, "fields.description").?;
-                var description = (ADF.inflate(app.root_allocator, description_root) catch |err| {
-                    gui.Text2(gui.printZ("Error occurred: {s}", .{@errorName(err)}));
-                    if (gui.Button("Crash due to error")) {
-                        return err;
-                    }
-                    break :blk;
-                }) orelse break :blk;
-                defer description.deinit();
-                renderAdf(app.*, description.root);
-            },
-            .failed => |reason| gui.Text2(reason),
+        const changed = gui.IsItemDeactivatedAfterEdit();
+        if (changed) {
+            try app.visible_tickets.append(
+                app.root_allocator,
+                try app.root_allocator.dupe(u8, ticket_id),
+            );
         }
     }
     gui.End();
+
+    for (app.visible_tickets.items) |*ticket_id| {
+        if (ticket_id.len == 0) continue; // TODO: This index is leaked...
+
+        var view_open = true;
+        var visible_3 = gui.BeginExt(gui.printZ("Issue: {s}", .{ticket_id.*}), &view_open, .{});
+        if (visible_3) {
+            const issue_state = app.jira_store.requestIssue(ticket_id.*);
+            switch (issue_state) {
+                .fetching => gui.Text2("Fetching"),
+                .data => |issue| blk: {
+                    gui.Text2(gui.printZ("{s}", .{jsonGet(issue.root, "fields.summary").?.string}));
+                    const description_root = jsonGet(issue.root, "fields.description").?;
+                    var description = (ADF.inflate(app.root_allocator, description_root) catch |err| {
+                        gui.Text2(gui.printZ("Error occurred: {s}", .{@errorName(err)}));
+                        if (gui.Button("Crash due to error")) {
+                            return err;
+                        }
+                        break :blk;
+                    }) orelse break :blk;
+                    defer description.deinit();
+                    renderAdf(app.*, description.root);
+                },
+                .failed => |reason| gui.Text2(reason),
+            }
+        }
+
+        if (!view_open) {
+            app.root_allocator.free(ticket_id.*);
+            ticket_id.* = "";
+        }
+        gui.End();
+    }
 
     visible = gui.BeginExt("Debug", &app.debug_open, .{});
     if (visible) {
