@@ -21,6 +21,19 @@ fn glfw_error_callback(err: c_int, description: ?[*:0]const u8) callconv(.C) voi
     std.debug.print("Glfw Error {}: {s}\n", .{ err, description_safe });
 }
 
+fn glfwWindowFocusCallback(window: *glfw.GLFWwindow, c_focused: c_int) callconv(.C) void {
+    _ = window;
+
+    const focused = c_focused != 0;
+    if (focused) {
+        idle_lock.set();
+    } else {
+        idle_lock.reset();
+    }
+}
+
+var idle_lock: std.Thread.ResetEvent = .{};
+
 pub fn main() !void {
 
     // Setup window
@@ -48,6 +61,7 @@ pub fn main() !void {
     const window = glfw.glfwCreateWindow(1280, 720, "Dear ImGui GLFW+OpenGL3 example", null, null) orelse return error.GlfwCreateWindowFailed;
     glfw.glfwMakeContextCurrent(window);
     glfw.glfwSwapInterval(1); // Enable vsync
+    _ = glfw.glfwSetWindowFocusCallback(window, glfwWindowFocusCallback);
 
     // Initialize OpenGL loader
     if (gl.gladLoadGL() == 0)
@@ -151,6 +165,8 @@ pub fn main() !void {
         impl_gl3.RenderDrawData(imgui.GetDrawData());
 
         glfw.glfwSwapBuffers(window);
+
+        _ = idle_lock.timedWait(1 * std.time.ns_per_s) catch {};
     }
 
     // Cleanup
